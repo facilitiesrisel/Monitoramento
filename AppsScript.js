@@ -318,7 +318,7 @@ function enviarEmailBolaPreta(d, emailDestino, reqFiles) {
       });
   }
 
-  const imageFolder = DriveApp.getFolderById(IMAGE_FOLDER_ID);
+  const imageFolder = obterPastaDriveSegura(IMAGE_FOLDER_ID, "Anexos_Fotos_Monitoramento");
 
   // Tenta primeiramente gerar o PDF HTML formatado de alta qualidade
   var pdfVisual = null;
@@ -335,8 +335,8 @@ function enviarEmailBolaPreta(d, emailDestino, reqFiles) {
   } else {
     // Fallback de contingência pelo Google Doc caso ocorra erro inesperado no HTML
     try {
-      const outputFolder = DriveApp.getFolderById(OUTPUT_FOLDER_ID);
-      const templateFile = DriveApp.getFileById(BOLA_PRETA_TEMPLATE_ID);
+      const outputFolder = obterPastaDriveSegura(OUTPUT_FOLDER_ID, "Relatórios Bola Preta");
+      const templateFile = obterArquivoTemplateSeguro(BOLA_PRETA_TEMPLATE_ID, "Modelo Bola Preta");
       const docName = `RELATÓRIO DE VIAGEM - ${d.vehicle} - ${d.date}`;
       const copyFile = templateFile.makeCopy(docName, outputFolder);
       const doc = DocumentApp.openById(copyFile.getId());
@@ -903,22 +903,27 @@ function getSheetByGid(ss, gid) {
 
 function processFiles(files, targetFolderId) {
   if (files && files.length > 0) {
-    var folderIdToUse = targetFolderId || IMAGE_FOLDER_ID;
-    var folder = DriveApp.getFolderById(folderIdToUse);
-    
-    files.forEach(function(file) {
-      if (file.base64) {
-        var fileName = file.name;
-        // Salva com o nome exato recebido para manter correspondência com o registro na planilha
-        var existing = folder.getFilesByName(fileName);
-        while (existing.hasNext()) { existing.next().setTrashed(true); }
-        
-        var cleanBase64 = file.base64.replace(/^data:image\/\w+;base64,/, "");
-        var mimeType = file.mimeType || "image/png";
-        var blob = Utilities.newBlob(Utilities.base64Decode(cleanBase64), mimeType, fileName);
-        folder.createFile(blob);
-      }
-    });
+    try {
+      var folderIdToUse = targetFolderId || IMAGE_FOLDER_ID;
+      var folder = obterPastaDriveSegura(folderIdToUse, "Anexos_Fotos_Monitoramento");
+      
+      files.forEach(function(file) {
+        if (file.base64) {
+          var fileName = file.name;
+          try {
+            var existing = folder.getFilesByName(fileName);
+            while (existing.hasNext()) { existing.next().setTrashed(true); }
+          } catch(eExist) {}
+          
+          var cleanBase64 = file.base64.replace(/^data:image\/\w+;base64,/, "");
+          var mimeType = file.mimeType || "image/png";
+          var blob = Utilities.newBlob(Utilities.base64Decode(cleanBase64), mimeType, fileName);
+          folder.createFile(blob);
+        }
+      });
+    } catch(errProc) {
+      console.error("Erro ao processar arquivos: " + errProc.toString());
+    }
   }
 }
 
@@ -986,88 +991,103 @@ function enviarRelatorio(data, destinatarioOverride, copiaOverride, reqFiles) {
       });
   }
 
-  const outputFolder = DriveApp.getFolderById(OUTPUT_FOLDER_ID);
-  const templateFile = DriveApp.getFileById(TEMPLATE_DOC_ID);
-  const copyFile = templateFile.makeCopy('Relatório ' + motorista + ' - ' + dataSomenteData, outputFolder);
-  const doc = DocumentApp.openById(copyFile.getId());
-  const body = doc.getBody();
+  const outputFolder = obterPastaDriveSegura(OUTPUT_FOLDER_ID, "Relatórios de Avaliação");
+  const templateFile = obterArquivoTemplateSeguro(TEMPLATE_DOC_ID, "Modelo Avaliação Direção");
+  const imageFolder = obterPastaDriveSegura(IMAGE_FOLDER_ID, "Anexos_Fotos_Monitoramento");
 
-  const IMAGE_HEADERS = [
-    'REGISTROS DE VERIFICAÇÃO DAS IMAGENS 1', 
-    'REGISTROS DE VERIFICAÇÃO DAS IMAGENS 2', 
-    'REGISTROS DE VERIFICAÇÃO DAS IMAGENS 3', 
-    'REGISTROS DE VERIFICAÇÃO DAS IMAGENS 4'
-  ];
-  
-  const imageAttachments = [];
-  const imageFolder = DriveApp.getFolderById(IMAGE_FOLDER_ID);
+  let copyFile = null;
+  let imageAttachments = [];
 
-  for (let header in data) {
-    let rawValue = data[header];
-    let value = '';
-
-    if (rawValue instanceof Date) {
-      value = Utilities.formatDate(rawValue, Session.getScriptTimeZone(), "dd/MM/yyyy");
-    } else {
-      value = String(rawValue ?? '').trim();
-    }
-
-    const headerClean = header.trim();
-    const tag = '<<' + headerClean + '>>';
-    
-    if (headerClean.includes('DATA') && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-       var p = value.split('-');
-       value = p[2] + '/' + p[1] + '/' + p[0];
-    }
-
-    if (IMAGE_HEADERS.includes(headerClean)) {
-      if (value) {
-        var blob = buscarBlobFlexivel(imageFolder, value, memoryFiles);
-        if (blob) {
-          imageAttachments.push(blob);
-          let range = body.findText(escapeRegExp(tag));
-          if (range) {
-            let textElement = range.getElement();
-            let parent = textElement.getParent();
-            
-            if (parent && parent.getType() === DocumentApp.ElementType.PARAGRAPH) {
-               parent.asParagraph().clear().appendInlineImage(blob).setWidth(IMG_WIDTH_PX).setHeight(IMG_HEIGHT_PX);
-            }
-          }
-        }
-      }
-      body.replaceText(escapeRegExp(tag), "");
-      continue;
-    }
-
-    body.replaceText(escapeRegExp(tag), value);
-
-    const normVal = value.toUpperCase();
-    const headerUpper = headerClean.toUpperCase();
-
-    if (['SIM', 'NÃO', 'NAO', 'NA'].includes(normVal) && !headerUpper.includes('ASSINATURA')) {
-      var processedElements = [];
-      let range = body.findText(escapeRegExp(value));
-      while (range) {
-        let elem = range.getElement();
-        if (processedElements.indexOf(elem) !== -1) {
-          break; // Evita loop infinito no findText
-        }
-        processedElements.push(elem);
-
-        let cell = elem.getParent();
-        while (cell && cell.getType() !== DocumentApp.ElementType.TABLE_CELL && cell.getType() !== DocumentApp.ElementType.BODY_SECTION) cell = cell.getParent();
-        if (cell && cell.getType() === DocumentApp.ElementType.TABLE_CELL) {
-          let color = (normVal === 'SIM') ? COR_RISEL_VERDE : (normVal === 'NA') ? COR_RISEL_AZUL : COR_RISEL_LARANJA;
-          cell.asTableCell().setBackgroundColor(color);
-          elem.asText().setForegroundColor(COR_FONTE_BRANCA).setBold(true).setBackgroundColor(color);
-        }
-        range = body.findText(escapeRegExp(value), range);
-      }
+  if (templateFile) {
+    try {
+      copyFile = templateFile.makeCopy('Relatório ' + motorista + ' - ' + dataSomenteData, outputFolder);
+    } catch (eCopy) {
+      console.error("Erro ao copiar modelo de relatório: " + eCopy.toString());
+      copyFile = null;
     }
   }
 
-  doc.saveAndClose();
+  if (copyFile) {
+    const doc = DocumentApp.openById(copyFile.getId());
+    const body = doc.getBody();
+
+    const IMAGE_HEADERS = [
+      'REGISTROS DE VERIFICAÇÃO DAS IMAGENS 1', 
+      'REGISTROS DE VERIFICAÇÃO DAS IMAGENS 2', 
+      'REGISTROS DE VERIFICAÇÃO DAS IMAGENS 3', 
+      'REGISTROS DE VERIFICAÇÃO DAS IMAGENS 4'
+    ];
+
+    for (let header in data) {
+      let rawValue = data[header];
+      let value = '';
+
+      if (rawValue instanceof Date) {
+        value = Utilities.formatDate(rawValue, Session.getScriptTimeZone(), "dd/MM/yyyy");
+      } else {
+        value = String(rawValue ?? '').trim();
+      }
+
+      const headerClean = header.trim();
+      const tag = '<<' + headerClean + '>>';
+      
+      if (headerClean.includes('DATA') && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+         var p = value.split('-');
+         value = p[2] + '/' + p[1] + '/' + p[0];
+      }
+
+      if (IMAGE_HEADERS.includes(headerClean)) {
+        if (value) {
+          var blob = buscarBlobFlexivel(imageFolder, value, memoryFiles);
+          if (blob) {
+            imageAttachments.push(blob);
+            let range = body.findText(escapeRegExp(tag));
+            if (range) {
+              let textElement = range.getElement();
+              let parent = textElement.getParent();
+              
+              if (parent && parent.getType() === DocumentApp.ElementType.PARAGRAPH) {
+                 parent.asParagraph().clear().appendInlineImage(blob).setWidth(IMG_WIDTH_PX).setHeight(IMG_HEIGHT_PX);
+              }
+            }
+          }
+        }
+        body.replaceText(escapeRegExp(tag), "");
+        continue;
+      }
+
+      body.replaceText(escapeRegExp(tag), value);
+
+      const normVal = value.toUpperCase();
+      const headerUpper = headerClean.toUpperCase();
+
+      if (['SIM', 'NÃO', 'NAO', 'NA'].includes(normVal) && !headerUpper.includes('ASSINATURA')) {
+        var processedElements = [];
+        let range = body.findText(escapeRegExp(value));
+        while (range) {
+          let elem = range.getElement();
+          if (processedElements.indexOf(elem) !== -1) {
+            break; // Evita loop infinito no findText
+          }
+          processedElements.push(elem);
+
+          let cell = elem.getParent();
+          while (cell && cell.getType() !== DocumentApp.ElementType.TABLE_CELL && cell.getType() !== DocumentApp.ElementType.BODY_SECTION) cell = cell.getParent();
+          if (cell && cell.getType() === DocumentApp.ElementType.TABLE_CELL) {
+            let color = (normVal === 'SIM') ? COR_RISEL_VERDE : (normVal === 'NA') ? COR_RISEL_AZUL : COR_RISEL_LARANJA;
+            cell.asTableCell().setBackgroundColor(color);
+            elem.asText().setForegroundColor(COR_FONTE_BRANCA).setBold(true).setBackgroundColor(color);
+          }
+          range = body.findText(escapeRegExp(value), range);
+        }
+      }
+    }
+
+    doc.saveAndClose();
+  } else {
+    copyFile = criarDocumentoRelatorioDinamico('Relatório ' + motorista + ' - ' + dataSomenteData, data, outputFolder, memoryFiles, imageFolder, imageAttachments);
+  }
+
   const pdfFile = copyFile.getAs(MimeType.PDF);
   
   var mailOptions = {
@@ -1088,6 +1108,124 @@ function enviarRelatorio(data, destinatarioOverride, copiaOverride, reqFiles) {
 }
 
 function escapeRegExp(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+function obterPastaDriveSegura(folderId, nomePadrao) {
+  if (folderId) {
+    try {
+      return DriveApp.getFolderById(folderId);
+    } catch(e) {}
+  }
+  try {
+    var folders = DriveApp.getFoldersByName(nomePadrao || "Anexos_Monitoramento");
+    if (folders.hasNext()) {
+      return folders.next();
+    }
+    return DriveApp.createFolder(nomePadrao || "Anexos_Monitoramento");
+  } catch(e2) {
+    return DriveApp.getRootFolder();
+  }
+}
+
+function obterArquivoTemplateSeguro(fileId, nomeModelo) {
+  if (fileId) {
+    try {
+      return DriveApp.getFileById(fileId);
+    } catch(e) {}
+  }
+  try {
+    var files = DriveApp.getFilesByName(nomeModelo);
+    if (files.hasNext()) {
+      return files.next();
+    }
+  } catch(e2) {}
+  return null;
+}
+
+function criarDocumentoRelatorioDinamico(tituloDoc, data, outputFolder, memoryFiles, imageFolder, imageAttachments) {
+  var doc = DocumentApp.create(tituloDoc);
+  var body = doc.getBody();
+  body.setMarginTop(36).setMarginBottom(36).setMarginLeft(36).setMarginRight(36);
+
+  var pTitle = body.appendParagraph("RISEL COMBUSTÍVEIS - AVALIAÇÃO DE DIREÇÃO");
+  pTitle.setHeading(DocumentApp.ParagraphHeading.HEADING1);
+  pTitle.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+  pTitle.setFontFamily("Arial");
+
+  var motorista = String(data['MOTORISTA'] || data['Motorista'] || 'N/A').trim();
+  var avaliador = String(data['AVALIADOR'] || data['Avaliador'] || 'N/A').trim();
+  var frota = String(data['FROTA'] || data['Frota'] || 'N/A').trim();
+  var dataAval = String(data['DATA AVALIAÇÃO'] || data['Data Avaliação'] || 'N/A').trim();
+  var resultado = String(data['RESULTADO'] || data['Resultado'] || 'N/D').trim();
+
+  var pSub = body.appendParagraph(`Motorista: ${motorista}  |  Avaliador: ${avaliador}  |  Frota: ${frota}  |  Data: ${dataAval}  |  Nota: ${resultado}`);
+  pSub.setBold(true);
+  pSub.setFontSize(10);
+  pSub.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+  body.appendHorizontalRule();
+
+  var IMAGE_HEADERS = [
+    'REGISTROS DE VERIFICAÇÃO DAS IMAGENS 1', 
+    'REGISTROS DE VERIFICAÇÃO DAS IMAGENS 2', 
+    'REGISTROS DE VERIFICAÇÃO DAS IMAGENS 3', 
+    'REGISTROS DE VERIFICAÇÃO DAS IMAGENS 4'
+  ];
+
+  var tableData = [["ITEM DE AVALIAÇÃO", "RESPOSTA / VALOR"]];
+  
+  for (var k in data) {
+    var keyClean = String(k).trim();
+    if (!keyClean || keyClean === 'PROCESSED_SCRIPT' || keyClean === 'ROW_INDEX') continue;
+    
+    var val = String(data[k] ?? '').trim();
+    if (IMAGE_HEADERS.includes(keyClean)) {
+      if (val) {
+        var blob = buscarBlobFlexivel(imageFolder, val, memoryFiles);
+        if (blob) {
+          imageAttachments.push(blob);
+          tableData.push([keyClean, "[Imagem Anexa: " + val + "]"]);
+        } else {
+          tableData.push([keyClean, val]);
+        }
+      }
+      continue;
+    }
+    tableData.push([keyClean, val]);
+  }
+
+  var table = body.appendTable(tableData);
+  table.setBorderColor("#CCCCCC");
+
+  // Formatar primeira linha (Cabeçalho da tabela)
+  var headerRow = table.getRow(0);
+  for (var c = 0; c < headerRow.getNumCells(); c++) {
+    var cell = headerRow.getCell(c);
+    cell.setBackgroundColor(COR_RISEL_VERDE);
+    cell.getChild(0).asText().setForegroundColor(COR_FONTE_BRANCA).setBold(true);
+  }
+
+  // Formatar respostas SIM/NÃO/NA nas células
+  for (var r = 1; r < table.getNumRows(); r++) {
+    var row = table.getRow(r);
+    var valCell = row.getCell(1);
+    var textVal = valCell.getText().trim().toUpperCase();
+
+    if (['SIM', 'NÃO', 'NAO', 'NA'].includes(textVal)) {
+      var color = (textVal === 'SIM') ? COR_RISEL_VERDE : (textVal === 'NA') ? COR_RISEL_AZUL : COR_RISEL_LARANJA;
+      valCell.setBackgroundColor(color);
+      valCell.getChild(0).asText().setForegroundColor(COR_FONTE_BRANCA).setBold(true);
+    }
+  }
+
+  doc.saveAndClose();
+
+  var file = DriveApp.getFileById(doc.getId());
+  if (outputFolder) {
+    try {
+      file.moveTo(outputFolder);
+    } catch(eMove) {}
+  }
+  return file;
+}
 
 function getHtmlEmailBody(d) {
   return `
