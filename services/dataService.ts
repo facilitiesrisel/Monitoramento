@@ -15,7 +15,7 @@ export const DEFAULT_GID_FLEET = "896980151";                  // Aba: Frota (No
 
 // ATENÇÃO: Atualize esta URL se você criar uma NOVA implantação.
 // Se usar "Gerenciar Implantações > Nova Versão", a URL mantém-se a mesma.
-export const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx2R2BpQd19J_2UryK4mseF7slDH-p3AD5pokPLdtnPfxNKL7ii63QuiozXp4Omy7oCCQ/exec";
+export const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw1DlbXw6AKdnksiiIBpwOSYcj-kfGb3HPEhiwSJhH_n90FhmNR05eqf7PTPpzpvnShvQ/exec";
 
 export const DEFAULT_DRIVE_FOLDER_ID = "1QjcgNaMbyQECI5u_g1UAPW5ZySJ9dkJv"; 
 

@@ -85,6 +85,13 @@ function doPost(e) {
         }
       }
 
+      if (!targetRow && targetId.indexOf('ev-') === 0) {
+        var idx = parseInt(targetId.replace('ev-', ''), 10);
+        if (!isNaN(idx) && (idx + 1) < rows.length) {
+          targetRow = rows[idx + 1];
+        }
+      }
+
       if (!targetRow && data.row) {
         targetRow = data.row;
       }
@@ -104,6 +111,14 @@ function doPost(e) {
           enviarRelatorio(mappedData, data.email || null, null, data.files);
           return ContentService.createTextOutput("OK");
         } catch (eResend) {
+          console.error("Erro ao reenviar e-mail de avaliação: " + eResend.toString());
+          try {
+             MailApp.sendEmail({
+               to: 'deny.goncalves@risel.com.br',
+               subject: 'ERRO AO REENVIAR AVALIAÇÃO: ' + (mappedData['MOTORISTA'] || 'N/A'),
+               htmlBody: 'Houve um erro ao reenviar a avaliação:<br><br><b>Mensagem:</b> ' + eResend.message + '<br><b>Stack:</b> ' + String(eResend.stack)
+             });
+          } catch(ex) {}
           return ContentService.createTextOutput("Erro ao reenviar e-mail de avaliação: " + eResend.toString());
         }
       } else {
@@ -375,34 +390,38 @@ function obterImagemBase64(fileName, memoryFiles, imageFolder) {
 function buscarBlobFlexivel(folder, fileName, memoryFiles) {
   if (!fileName) return null;
 
-  // Checa se está em memoryFiles com variações
-  if (memoryFiles) {
-    if (memoryFiles[fileName]) return memoryFiles[fileName];
-    for (var k in memoryFiles) {
-      if (k.toLowerCase() === fileName.toLowerCase() || k.endsWith(fileName) || fileName.endsWith(k)) {
-        return memoryFiles[k];
+  try {
+    // Checa se está em memoryFiles com variações
+    if (memoryFiles) {
+      if (memoryFiles[fileName]) return memoryFiles[fileName];
+      for (var k in memoryFiles) {
+        if (k.toLowerCase() === fileName.toLowerCase() || k.endsWith(fileName) || fileName.endsWith(k)) {
+          return memoryFiles[k];
+        }
       }
     }
-  }
 
-  if (!folder) return null;
+    if (!folder) return null;
 
-  // Busca exata no Drive
-  try {
-    var files = folder.getFilesByName(fileName);
-    if (files.hasNext()) return files.next().getBlob();
-  } catch(e) {}
-
-  // Busca variações de extensão
-  var nameWithoutExt = fileName.contains('.') ? fileName.substring(0, fileName.lastIndexOf('.')) : fileName;
-  var extensions = ['.png', '.jpg', '.jpeg', ''];
-
-  for (var i = 0; i < extensions.length; i++) {
-    var testName = nameWithoutExt + extensions[i];
+    // Busca exata no Drive
     try {
-      var fTest = folder.getFilesByName(testName);
-      if (fTest.hasNext()) return fTest.next().getBlob();
-    } catch(e2) {}
+      var files = folder.getFilesByName(fileName);
+      if (files.hasNext()) return files.next().getBlob();
+    } catch(e) {}
+
+    // Busca variações de extensão
+    var nameWithoutExt = (fileName.indexOf('.') !== -1) ? fileName.substring(0, fileName.lastIndexOf('.')) : fileName;
+    var extensions = ['.png', '.jpg', '.jpeg', ''];
+
+    for (var i = 0; i < extensions.length; i++) {
+      var testName = nameWithoutExt + extensions[i];
+      try {
+        var fTest = folder.getFilesByName(testName);
+        if (fTest.hasNext()) return fTest.next().getBlob();
+      } catch(e2) {}
+    }
+  } catch(err) {
+    console.error("Erro em buscarBlobFlexivel: " + err.toString());
   }
 
   return null;
