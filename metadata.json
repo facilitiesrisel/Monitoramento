@@ -1,0 +1,10 @@
+{
+  "name": "monitoramento",
+  "description": "Sistema de gestão de avaliações de direção com dashboard futurista e identidade visual Risel.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,1769 @@
+
+import React, { useState, useEffect } from 'react';
+import { 
+  ClipboardCheck, 
+  Plus, 
+  Send, 
+  History, 
+  Calendar as CalendarIcon, 
+  ChevronDown, 
+  ChevronUp, 
+  Copy, 
+  CheckCircle2, 
+  Clock, 
+  MapPin, 
+  AlertCircle, 
+  Info, 
+  MoreHorizontal,
+  Search,
+  Filter,
+  X,
+  Pencil,
+  LayoutGrid,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  Coffee,
+  Sparkles,
+  LayoutDashboard,
+  ThermometerSnowflake,
+  Map,
+  Video
+} from 'lucide-react';
+import { 
+  getShiftOccurrences, 
+  addShiftOccurrence, 
+  updateShiftOccurrence,
+  finalizeShift, 
+  normalizeEvaluatorName,
+  deleteShiftOccurrence,
+  loadShiftOccurrencesData
+} from '../services/dataService';
+import { ShiftOccurrence, OccurrenceType, UserRole } from '../types';
+
+interface ShiftHandoverProps {
+  userName: string;
+  userRole?: UserRole;
+}
+
+const BASES = ['Aguaí', 'Araraquara', 'Betim', 'Capão Bonito', 'Cubatão', 'Jales', 'Ourinhos', 'Paulínia', 'São Bernardo', 'Suprimentos', 'Geral'];
+
+const BASE_COLORS: Record<string, string> = {
+  'Aguaí': 'bg-blue-500',
+  'Araraquara': 'bg-emerald-500',
+  'Betim': 'bg-purple-500',
+  'Capão Bonito': 'bg-orange-500',
+  'Cubatão': 'bg-pink-500',
+  'Jales': 'bg-cyan-500',
+  'Ourinhos': 'bg-indigo-500',
+  'Paulínia': 'bg-rose-500',
+  'São Bernardo': 'bg-amber-500',
+  'Suprimentos': 'bg-teal-500',
+  'Geral': 'bg-slate-500',
+};
+
+const BASE_HEX_COLORS: Record<string, string> = {
+  'Aguaí': '#3b82f6',
+  'Araraquara': '#10b981',
+  'Betim': '#a855f7',
+  'Capão Bonito': '#f97316',
+  'Cubatão': '#ec4899',
+  'Jales': '#06b6d4',
+  'Ourinhos': '#6366f1',
+  'Paulínia': '#f43f5e',
+  'São Bernardo': '#f59e0b',
+  'Suprimentos': '#14b8a6',
+  'Geral': '#64748b',
+};
+const TYPES: OccurrenceType[] = ['CFTV', 'Checklist do Setor', 'Monitoramento', 'Ocorrência', 'Orientação', 'Outros'];
+
+const getActualDescription = (desc: string) => desc.includes('|||AUDIT|||') ? desc.split('|||AUDIT|||')[0] : desc;
+const getAuditLog = (desc: string) => desc.includes('|||AUDIT|||') ? desc.split('|||AUDIT|||')[1] : '';
+
+export const encodeChecklist = (
+  cafeteira: boolean, 
+  limpeza: boolean, 
+  organizacao: boolean, 
+  arCondicionado: boolean,
+  alertasRastreador: boolean,
+  alertasCFTV: boolean,
+  desc: string
+) => {
+  return `[CHECKLIST] Cafeteira limpa: ${cafeteira} | Limpeza e conservação da Sala: ${limpeza} | Organização das Mesas: ${organizacao} | Ar condicionado: ${arCondicionado} | Alertas Rastreador Tratados: ${alertasRastreador} | Alertas CFTV Tratados: ${alertasCFTV} | Descrição: ${desc}`;
+};
+
+export const decodeChecklist = (desc: string) => {
+  if (desc.startsWith('[CHECKLIST]')) {
+    const parts = desc.replace('[CHECKLIST] ', '').split(' | ');
+    if (parts.length >= 4) {
+      const cafeteira = parts[0].split(': ')[1] === 'true';
+      const limpeza = parts[1].split(': ')[1] === 'true';
+      const organizacao = parts[2].split(': ')[1] === 'true';
+      
+      let arCondicionado = false;
+      let alertasRastreador = false;
+      let alertasCFTV = false;
+      let description = '';
+
+      if (parts.length >= 7) {
+        arCondicionado = parts[3].split(': ')[1] === 'true';
+        alertasRastreador = parts[4].split(': ')[1] === 'true';
+        alertasCFTV = parts[5].split(': ')[1] === 'true';
+        description = parts[6].split(': ')[1] || '';
+      } else {
+        description = parts[3].split(': ')[1] || '';
+      }
+
+      return { cafeteira, limpeza, organizacao, arCondicionado, alertasRastreador, alertasCFTV, description };
+    }
+  }
+  return null;
+};
+
+const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => {
+  const [activeView, setActiveView] = useState<'current' | 'history' | 'audit'>('current');
+  const [occurrences, setOccurrences] = useState<ShiftOccurrence[]>([]);
+  const [history, setHistory] = useState<ShiftOccurrence[]>([]);
+  const [auditOccurrences, setAuditOccurrences] = useState<ShiftOccurrence[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [historyMode, setHistoryMode] = useState<'list' | 'calendar'>('list');
+  const [calendarDate, setCalendarDate] = useState(new Date());
+  const [selectedDateOccs, setSelectedDateOccs] = useState<{date: string, occs: ShiftOccurrence[]} | null>(null);
+  
+  // Form state
+  const [type, setType] = useState<OccurrenceType>('Monitoramento');
+  const [base, setBase] = useState('Geral');
+  const [description, setDescription] = useState('');
+  
+  // Checklist state
+  const [checklistCafeteira, setChecklistCafeteira] = useState(false);
+  const [checklistLimpeza, setChecklistLimpeza] = useState(false);
+  const [checklistOrganizacao, setChecklistOrganizacao] = useState(false);
+  const [checklistArCondicionado, setChecklistArCondicionado] = useState(false);
+  const [checklistAlertasRastreador, setChecklistAlertasRastreador] = useState(false);
+  const [checklistAlertasCFTV, setChecklistAlertasCFTV] = useState(false);
+
+  const getCurrentShiftInfo = () => {
+    const now = new Date();
+    const hours = now.getHours();
+    
+    let shiftDate = new Date(now);
+    let shiftType: 'Diurno' | 'Noturno';
+
+    if (hours >= 6 && hours < 18) {
+        shiftType = 'Diurno';
+    } else {
+        shiftType = 'Noturno';
+        if (hours < 6) {
+            shiftDate.setDate(shiftDate.getDate() - 1);
+        }
+    }
+
+    const year = shiftDate.getFullYear();
+    const month = String(shiftDate.getMonth() + 1).padStart(2, '0');
+    const day = String(shiftDate.getDate()).padStart(2, '0');
+    
+    return {
+        date: `${year}-${month}-${day}`,
+        shift: shiftType
+    };
+  };
+
+  const initialShiftInfo = getCurrentShiftInfo();
+  const [shift, setShift] = useState<'Diurno' | 'Noturno'>(initialShiftInfo.shift);
+  const [shiftDate, setShiftDate] = useState<string>(initialShiftInfo.date);
+  
+  // History filters
+  const [filterDate, setFilterDate] = useState("");
+  const [expandedDates, setExpandedDates] = useState<string[]>([]);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [showFinalizeConfirm, setShowFinalizeConfirm] = useState(false);
+  const [message, setMessage] = useState<{text: string, type: 'success' | 'error' | 'info'} | null>(null);
+
+  const showMessage = (text: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setMessage({ text, type });
+    setTimeout(() => setMessage(null), 3000);
+  };
+
+  useEffect(() => {
+    loadCurrentOccurrences();
+
+    const interval = setInterval(async () => {
+      await loadShiftOccurrencesData();
+      loadCurrentOccurrences();
+      if (activeView === 'history') loadHistory();
+      if (activeView === 'audit') loadAudit();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [userName, shift, shiftDate, activeView]);
+
+  // Auto-switch shift based on current time
+  useEffect(() => {
+    const checkShiftChange = () => {
+      const currentInfo = getCurrentShiftInfo();
+      // Only auto-switch if the user is currently on the "current" shift view
+      // and the shift has actually changed in real-time
+      if (activeView === 'current' && (shift !== currentInfo.shift || shiftDate !== currentInfo.date)) {
+        const now = new Date();
+        const hours = now.getHours();
+        const mins = now.getMinutes();
+        
+        // Auto-switch at 06:00 and 18:00 (within the first 5 minutes of the hour)
+        if ((hours === 6 || hours === 18) && mins < 5) {
+          setShift(currentInfo.shift);
+          setShiftDate(currentInfo.date);
+          showMessage(`Turno alterado automaticamente para ${currentInfo.shift}.`, 'info');
+        }
+      }
+    };
+
+    const interval = setInterval(checkShiftChange, 30000); // Check every 30 seconds
+    return () => clearInterval(interval);
+  }, [activeView, shift, shiftDate]);
+
+  const loadCurrentOccurrences = () => {
+    const data = getShiftOccurrences({ 
+      date: shiftDate, 
+      finalized: false,
+      shift: shift
+    });
+    setOccurrences(data);
+  };
+
+  const loadHistory = () => {
+    const allData = getShiftOccurrences();
+    const currentInfo = getCurrentShiftInfo();
+    
+    // History should include explicitly finalized shifts, 
+    // AND any shift that is from a past date or different shift period
+    const historyData = allData.filter(o => {
+      // Se foi finalizado, deve aparecer no histórico
+      if (o.finalized) return true;
+      
+      // Se não foi finalizado, mas é de um dia anterior ou turno diferente, 
+      // deve aparecer no histórico para não ficar "órfão"
+      if (o.date < currentInfo.date || (o.date === currentInfo.date && o.shift !== currentInfo.shift)) {
+        return true;
+      }
+      return false;
+    });
+    
+    setHistory(historyData);
+  };
+
+  const loadAudit = () => {
+    // Busca todas as ocorrências incluindo as excluídas
+    const allData = getShiftOccurrences({ includeDeleted: true });
+    // Filtra apenas as que possuem log de auditoria
+    const auditData = allData.filter(o => o.description.includes('|||AUDIT|||'));
+    setAuditOccurrences(auditData);
+  };
+
+  useEffect(() => {
+    if (activeView === 'history') {
+      loadHistory();
+    } else if (activeView === 'audit') {
+      loadAudit();
+    }
+  }, [activeView]);
+
+  const handleAddOccurrence = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // For Checklist, description can be empty, but we encode the checklist state
+    let finalDescToSave = description;
+    let finalBaseToSave = base;
+    
+    if (type === 'Checklist do Setor') {
+      finalDescToSave = encodeChecklist(checklistCafeteira, checklistLimpeza, checklistOrganizacao, checklistArCondicionado, checklistAlertasRastreador, checklistAlertasCFTV, description);
+      finalBaseToSave = 'Geral'; // Checklist doesn't need a specific base
+    } else if (!description.trim()) {
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      if (editingId) {
+        const originalOcc = occurrences.find(o => o.id === editingId) || history.find(o => o.id === editingId);
+        const oldDesc = originalOcc ? getActualDescription(originalOcc.description) : '';
+        const existingAudit = originalOcc ? getAuditLog(originalOcc.description) : '';
+        
+        const now = new Date().toLocaleString('pt-BR');
+        let newAudit = existingAudit;
+        
+        if (oldDesc !== finalDescToSave || originalOcc?.type !== type || originalOcc?.base !== finalBaseToSave || originalOcc?.shift !== shift) {
+            newAudit += `\n[Editado por ${userName} em ${now}]`;
+            if (oldDesc !== finalDescToSave) newAudit += `\n- Descrição alterada de: "${oldDesc}"`;
+            if (originalOcc?.type !== type) newAudit += `\n- Tipo alterado de: ${originalOcc?.type}`;
+            if (originalOcc?.base !== finalBaseToSave) newAudit += `\n- Base alterada de: ${originalOcc?.base}`;
+        }
+        
+        const finalDescription = newAudit ? `${finalDescToSave}|||AUDIT|||${newAudit}` : finalDescToSave;
+
+        await updateShiftOccurrence(editingId, {
+          type,
+          base: finalBaseToSave,
+          description: finalDescription,
+          shift
+        });
+        setEditingId(null);
+      } else {
+        await addShiftOccurrence({
+          date: shiftDate,
+          shift,
+          type,
+          base: finalBaseToSave,
+          description: finalDescToSave,
+          operator: normalizeEvaluatorName(userName)
+        });
+      }
+      setDescription('');
+      setChecklistCafeteira(false);
+      setChecklistLimpeza(false);
+      setChecklistOrganizacao(false);
+      setChecklistArCondicionado(false);
+      setChecklistAlertasRastreador(false);
+      setChecklistAlertasCFTV(false);
+      loadCurrentOccurrences();
+      if (activeView === 'history') loadHistory();
+    } catch (error) {
+      console.error('Error saving occurrence:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleEdit = (occ: ShiftOccurrence) => {
+    setEditingId(occ.id);
+    setType(occ.type);
+    setBase(occ.base);
+    
+    const actualDesc = getActualDescription(occ.description);
+    if (occ.type === 'Checklist do Setor') {
+      const decoded = decodeChecklist(actualDesc);
+      if (decoded) {
+        setChecklistCafeteira(decoded.cafeteira);
+        setChecklistLimpeza(decoded.limpeza);
+        setChecklistOrganizacao(decoded.organizacao);
+        setChecklistArCondicionado(decoded.arCondicionado);
+        setChecklistAlertasRastreador(decoded.alertasRastreador);
+        setChecklistAlertasCFTV(decoded.alertasCFTV);
+        setDescription(decoded.description);
+      } else {
+        setDescription(actualDesc);
+      }
+    } else {
+      setDescription(actualDesc);
+    }
+    
+    setShift(occ.shift);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setDescription('');
+    setType('Monitoramento');
+    setBase('Geral');
+  };
+
+  const handleFinalizeShift = async () => {
+    if (occurrences.length === 0) {
+      showMessage('Adicione pelo menos uma ocorrência antes de finalizar o turno.', 'error');
+      return;
+    }
+
+    setShowFinalizeConfirm(true);
+  };
+
+  const confirmFinalizeShift = async () => {
+    setShowFinalizeConfirm(false);
+    setIsLoading(true);
+    try {
+      // Clear local state immediately for better UX
+      setOccurrences([]);
+      
+      await finalizeShift(normalizeEvaluatorName(userName), shiftDate, shift);
+      
+      // Refresh data from server to be sure
+      await loadShiftOccurrencesData();
+      loadCurrentOccurrences();
+      loadHistory();
+      setActiveView('history');
+      showMessage('Turno finalizado com sucesso!', 'success');
+    } catch (error) {
+      console.error('Error finalizing shift:', error);
+      showMessage('Erro ao finalizar turno. Tente novamente.', 'error');
+      // Reload to restore state if it failed
+      loadCurrentOccurrences();
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteOccurrence = async (id: string) => {
+    setDeleteConfirmId(id);
+  };
+
+  const confirmDeleteOccurrence = async () => {
+    if (!deleteConfirmId) return;
+    const id = deleteConfirmId;
+    setDeleteConfirmId(null);
+    
+    setIsLoading(true);
+    try {
+      const occ = occurrences.find(o => o.id === id) || history.find(o => o.id === id);
+      if (occ) {
+          const now = new Date().toLocaleString('pt-BR');
+          const existingAudit = getAuditLog(occ.description);
+          const newAudit = existingAudit + `\n[EXCLUÍDO por ${userName} em ${now}]`;
+          const finalDescription = `${getActualDescription(occ.description)}|||AUDIT|||${newAudit}`;
+          
+          await updateShiftOccurrence(id, {
+              description: finalDescription
+          });
+      }
+      loadCurrentOccurrences();
+      if (activeView === 'history') loadHistory();
+    } catch (error) {
+      console.error('Error deleting occurrence:', error);
+      showMessage('Erro ao excluir ocorrência.', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const generateEmailTemplate = (data: ShiftOccurrence[]) => {
+    if (data.length === 0) return '';
+
+    const groupedByBase: Record<string, ShiftOccurrence[]> = {};
+    const orientations: ShiftOccurrence[] = [];
+    const checklists: ShiftOccurrence[] = [];
+
+    // Use the date and shift from the data if available
+    const displayDate = data[0]?.date ? new Date(data[0].date + 'T12:00:00').toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR');
+    const displayShift = data[0]?.shift || shift;
+
+    data.forEach(occ => {
+      if (occ.type === 'Orientação') {
+        orientations.push(occ);
+      } else if (occ.type === 'Checklist do Setor') {
+        checklists.push(occ);
+      } else {
+        const b = occ.base;
+        if (!groupedByBase[b]) groupedByBase[b] = [];
+        groupedByBase[b].push(occ);
+      }
+    });
+
+    // Collect all bases present in the data + the standard BASES
+    const basesInData = Array.from(new Set(data.filter(o => o.type !== 'Orientação' && o.type !== 'Checklist do Setor').map(o => o.base)));
+    const combinedBases = Array.from(new Set([...BASES, ...basesInData]));
+
+    // Sort bases alphabetically, but keep 'Geral' at the end if it exists
+    const allBases = combinedBases.sort((a, b) => {
+      if (a === 'Geral') return 1;
+      if (b === 'Geral') return -1;
+      return a.localeCompare(b, 'pt-BR', { sensitivity: 'base' });
+    });
+
+    let template = `*PASSAGEM DE PLANTÃO - ${displayShift.toUpperCase()} - ${displayDate}*\n\n`;
+
+    allBases.forEach(b => {
+      const baseOccs = groupedByBase[b] || [];
+      template += `*BASE: ${b.toUpperCase()}*\n`;
+      
+      if (baseOccs.length === 0) {
+        template += `- [Monitoramento] - Sem Alterações\n`;
+      } else {
+        // Sort occurrences by type for better organization
+        const sortedOccs = [...baseOccs].sort((a, b) => a.type.localeCompare(b.type));
+        sortedOccs.forEach(occ => {
+          template += `- [${occ.type}] ${getActualDescription(occ.description)}\n`;
+        });
+      }
+      template += `\n`;
+    });
+
+    if (orientations.length > 0) {
+      template += `*ORIENTAÇÕES GERAIS*\n`;
+      orientations.forEach(occ => {
+        template += `- ${getActualDescription(occ.description)}\n`;
+      });
+      template += `\n`;
+    }
+
+    if (checklists.length > 0) {
+      template += `*CHECKLIST DO SETOR*\n`;
+      checklists.forEach(occ => {
+        const decoded = decodeChecklist(getActualDescription(occ.description));
+        if (decoded) {
+          template += `- Cafeteira limpa: ${decoded.cafeteira ? 'Sim' : 'Não'}\n`;
+          template += `- Limpeza e conservação da Sala: ${decoded.limpeza ? 'Sim' : 'Não'}\n`;
+          template += `- Organização das Mesas: ${decoded.organizacao ? 'Sim' : 'Não'}\n`;
+          template += `- Ar condicionado: ${decoded.arCondicionado ? 'Sim' : 'Não'}\n`;
+          template += `- Alertas Rastreador Tratados: ${decoded.alertasRastreador ? 'Sim' : 'Não'}\n`;
+          template += `- Alertas CFTV Tratados: ${decoded.alertasCFTV ? 'Sim' : 'Não'}\n`;
+          if (decoded.description) {
+            template += `- Observação: ${decoded.description}\n`;
+          }
+        } else {
+          template += `- ${getActualDescription(occ.description)}\n`;
+        }
+      });
+    }
+
+    return template;
+  };
+
+  const generateHTMLEmailTemplate = (data: ShiftOccurrence[]) => {
+    if (data.length === 0) return '';
+
+    const groupedByBase: Record<string, ShiftOccurrence[]> = {};
+    const orientations: ShiftOccurrence[] = [];
+    const checklists: ShiftOccurrence[] = [];
+
+    const displayDate = data[0]?.date ? new Date(data[0].date + 'T12:00:00').toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR');
+    const displayShift = data[0]?.shift || shift;
+
+    data.forEach(occ => {
+      if (occ.type === 'Orientação') {
+        orientations.push(occ);
+      } else if (occ.type === 'Checklist do Setor') {
+        checklists.push(occ);
+      } else {
+        const b = occ.base;
+        if (!groupedByBase[b]) groupedByBase[b] = [];
+        groupedByBase[b].push(occ);
+      }
+    });
+
+    // Collect all bases present in the data + the standard BASES
+    const basesInData = Array.from(new Set(data.filter(o => o.type !== 'Orientação' && o.type !== 'Checklist do Setor').map(o => o.base)));
+    const combinedBases = Array.from(new Set([...BASES, ...basesInData]));
+
+    // Sort bases alphabetically, but keep 'Geral' at the end if it exists
+    const allBases = combinedBases.sort((a, b) => {
+      if (a === 'Geral') return 1;
+      if (b === 'Geral') return -1;
+      return a.localeCompare(b, 'pt-BR', { sensitivity: 'base' });
+    });
+
+    let html = `
+      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="font-family: Arial, sans-serif; color: #333; max-width: 600px; border-collapse: collapse;">
+        <tr>
+          <td style="background-color: #10b981; color: #ffffff; padding: 15px; border-radius: 8px; font-family: Arial, sans-serif; font-weight: bold; text-align: center; font-size: 18px;">
+            PASSAGEM DE PLANTÃO - ${displayShift.toUpperCase()} - ${displayDate}
+          </td>
+        </tr>
+        <tr><td height="20" style="font-size: 1px; line-height: 1px;">&nbsp;</td></tr>
+    `;
+
+    allBases.forEach(b => {
+      const baseOccs = groupedByBase[b] || [];
+      const baseColor = BASE_HEX_COLORS[b] || '#64748b';
+      
+      html += `
+        <tr>
+          <td>
+            <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; margin-bottom: 15px;">
+              <tr>
+                <td style="background-color: ${baseColor}; color: #ffffff; padding: 6px 12px; font-family: Arial, sans-serif; font-weight: bold; text-transform: uppercase; font-size: 11px; letter-spacing: 1px;">
+                  BASE: ${b}
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 12px; background-color: #ffffff;">
+                  <table cellpadding="0" cellspacing="0" border="0" width="100%">
+      `;
+      
+      if (baseOccs.length === 0) {
+        html += `
+          <tr>
+            <td style="font-family: Arial, sans-serif; font-size: 13px; color: #64748b;">
+              <span style="color: #059669; font-weight: bold; font-size: 11px; text-transform: uppercase;">[Monitoramento]</span> - Sem Alterações
+            </td>
+          </tr>
+        `;
+      } else {
+        // Sort occurrences by type
+        const sortedOccs = [...baseOccs].sort((a, b) => a.type.localeCompare(b.type));
+        sortedOccs.forEach((occ, idx) => {
+          const typeColor = occ.type === 'Ocorrência' ? '#dc2626' : 
+                           occ.type === 'Orientação' ? '#2563eb' : 
+                           occ.type === 'Monitoramento' ? '#059669' : '#475569';
+          
+          html += `
+            <tr ${idx > 0 ? 'style="border-top: 1px solid #f1f5f9;"' : ''}>
+              <td style="font-family: Arial, sans-serif; padding: ${idx > 0 ? '8px 0' : '0 0 8px 0'}; font-size: 13px; line-height: 1.5; color: #334155;">
+                <div style="margin-bottom: 4px;">
+                  <span style="color: ${typeColor}; font-weight: bold; font-size: 10px; text-transform: uppercase; background-color: ${typeColor}15; padding: 2px 6px; border-radius: 4px;">${occ.type}</span>
+                </div>
+                ${getActualDescription(occ.description)}
+              </td>
+            </tr>
+          `;
+        });
+      }
+      
+      html += `
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      `;
+    });
+
+    if (orientations.length > 0) {
+      html += `
+        <tr>
+          <td>
+            <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; margin-top: 10px; background-color: #f8fafc;">
+              <tr>
+                <td style="background-color: #3b82f6; color: #ffffff; padding: 6px 12px; font-family: Arial, sans-serif; font-weight: bold; text-transform: uppercase; font-size: 11px; letter-spacing: 1px;">
+                  ORIENTAÇÕES GERAIS
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 12px;">
+                  <table cellpadding="0" cellspacing="0" border="0" width="100%">
+      `;
+      
+      orientations.forEach((occ, idx) => {
+        html += `
+                    <tr ${idx > 0 ? 'style="border-top: 1px solid #e2e8f0;"' : ''}>
+                      <td style="font-family: Arial, sans-serif; padding: ${idx > 0 ? '8px 0' : '0 0 8px 0'}; font-size: 13px; color: #334155; line-height: 1.5;">
+                        • ${getActualDescription(occ.description)}
+                      </td>
+                    </tr>
+        `;
+      });
+      
+      html += `
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      `;
+    }
+
+    if (checklists.length > 0) {
+      html += `
+        <tr>
+          <td>
+            <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; margin-top: 10px; background-color: #f8fafc;">
+              <tr>
+                <td style="background-color: #8b5cf6; color: #ffffff; padding: 6px 12px; font-family: Arial, sans-serif; font-weight: bold; text-transform: uppercase; font-size: 11px; letter-spacing: 1px;">
+                  CHECKLIST DO SETOR
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 12px;">
+                  <table cellpadding="0" cellspacing="0" border="0" width="100%">
+      `;
+      
+      checklists.forEach((occ, idx) => {
+        const decoded = decodeChecklist(getActualDescription(occ.description));
+        if (decoded) {
+          html += `
+                    <tr ${idx > 0 ? 'style="border-top: 1px solid #e2e8f0;"' : ''}>
+                      <td style="font-family: Arial, sans-serif; padding: ${idx > 0 ? '8px 0' : '0 0 8px 0'}; font-size: 13px; color: #334155; line-height: 1.5;">
+                        <div style="display: flex; flex-direction: column; gap: 4px;">
+                          <div>
+                            <span style="color: ${decoded.cafeteira ? '#10b981' : '#ef4444'}; font-weight: bold;">${decoded.cafeteira ? '✓' : '✗'}</span> Cafeteira limpa
+                          </div>
+                          <div>
+                            <span style="color: ${decoded.limpeza ? '#10b981' : '#ef4444'}; font-weight: bold;">${decoded.limpeza ? '✓' : '✗'}</span> Limpeza e conservação da Sala
+                          </div>
+                          <div>
+                            <span style="color: ${decoded.organizacao ? '#10b981' : '#ef4444'}; font-weight: bold;">${decoded.organizacao ? '✓' : '✗'}</span> Organização das Mesas
+                          </div>
+                          <div>
+                            <span style="color: ${decoded.arCondicionado ? '#10b981' : '#ef4444'}; font-weight: bold;">${decoded.arCondicionado ? '✓' : '✗'}</span> Ar condicionado
+                          </div>
+                          <div>
+                            <span style="color: ${decoded.alertasRastreador ? '#10b981' : '#ef4444'}; font-weight: bold;">${decoded.alertasRastreador ? '✓' : '✗'}</span> Alertas Rastreador Tratados
+                          </div>
+                          <div>
+                            <span style="color: ${decoded.alertasCFTV ? '#10b981' : '#ef4444'}; font-weight: bold;">${decoded.alertasCFTV ? '✓' : '✗'}</span> Alertas CFTV Tratados
+                          </div>
+                          ${decoded.description ? `<div style="margin-top: 4px; color: #64748b; font-size: 12px;"><em>Obs: ${decoded.description}</em></div>` : ''}
+                        </div>
+                      </td>
+                    </tr>
+          `;
+        } else {
+          html += `
+                    <tr ${idx > 0 ? 'style="border-top: 1px solid #e2e8f0;"' : ''}>
+                      <td style="font-family: Arial, sans-serif; padding: ${idx > 0 ? '8px 0' : '0 0 8px 0'}; font-size: 13px; color: #334155; line-height: 1.5;">
+                        • ${getActualDescription(occ.description)}
+                      </td>
+                    </tr>
+          `;
+        }
+      });
+      
+      html += `
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      `;
+    }
+
+    html += `</table>`;
+    return html;
+  };
+
+  const handleCopyEmail = (data?: ShiftOccurrence[]) => {
+    const actualData = Array.isArray(data) ? data : occurrences;
+    const textTemplate = generateEmailTemplate(actualData);
+    const htmlTemplate = generateHTMLEmailTemplate(actualData);
+    
+    if (!textTemplate) return;
+    
+    if (navigator.clipboard && navigator.clipboard.write) {
+      const textBlob = new Blob([textTemplate], { type: 'text/plain' });
+      const htmlBlob = new Blob([htmlTemplate], { type: 'text/html' });
+      
+      const clipboardItem = new ClipboardItem({
+        'text/plain': textBlob,
+        'text/html': htmlBlob
+      });
+
+      navigator.clipboard.write([clipboardItem]).then(() => {
+        setCopySuccess(true);
+        setTimeout(() => setCopySuccess(false), 2000);
+      }).catch(err => {
+        console.error('Failed to copy rich text:', err);
+        fallbackCopyTextToClipboard(textTemplate, htmlTemplate);
+      });
+    } else {
+      fallbackCopyTextToClipboard(textTemplate, htmlTemplate);
+    }
+  };
+
+  const fallbackCopyTextToClipboard = (text: string, html?: string) => {
+    if (html) {
+      const container = document.createElement('div');
+      container.innerHTML = html;
+      container.style.position = 'fixed';
+      container.style.pointerEvents = 'none';
+      container.style.opacity = '0';
+      document.body.appendChild(container);
+
+      const range = document.createRange();
+      range.selectNode(container);
+      const selection = window.getSelection();
+      if (selection) {
+        selection.removeAllRanges();
+        selection.addRange(range);
+        try {
+          document.execCommand('copy');
+          setCopySuccess(true);
+          setTimeout(() => setCopySuccess(false), 2000);
+        } catch (err) {
+          console.error('Fallback HTML copy failed:', err);
+        }
+        selection.removeAllRanges();
+      }
+      document.body.removeChild(container);
+    } else {
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        setCopySuccess(true);
+        setTimeout(() => setCopySuccess(false), 2000);
+      } catch (err) {
+        console.error('Fallback text copy failed:', err);
+      }
+      document.body.removeChild(textArea);
+    }
+  };
+
+  const toggleDate = (date: string) => {
+    setExpandedDates(prev => 
+      prev.includes(date) ? prev.filter(d => d !== date) : [...prev, date]
+    );
+  };
+
+  const historyByDate = history.reduce((acc, occ) => {
+    const date = occ.date;
+    if (!acc[date]) acc[date] = [];
+    acc[date].push(occ);
+    return acc;
+  }, {} as Record<string, ShiftOccurrence[]>);
+
+  const sortedHistoryDates = Object.keys(historyByDate).sort((a, b) => b.localeCompare(a));
+
+  // Calendar Logic
+  const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
+  const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
+
+  const renderCalendar = () => {
+    const year = calendarDate.getFullYear();
+    const month = calendarDate.getMonth();
+    const daysInMonth = getDaysInMonth(year, month);
+    const firstDay = getFirstDayOfMonth(year, month);
+    const days = [];
+
+    // Empty slots for previous month
+    for (let i = 0; i < firstDay; i++) {
+      days.push(<div key={`empty-${i}`} className="h-24 md:h-32 bg-slate-50/50 border border-slate-100"></div>);
+    }
+
+    // Days of the month
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const dayOccs = historyByDate[dateStr] || [];
+      const isToday = new Date().toISOString().split('T')[0] === dateStr;
+
+      days.push(
+        <div 
+          key={day} 
+          onClick={() => dayOccs.length > 0 && setSelectedDateOccs({ date: dateStr, occs: dayOccs })}
+          className={`h-24 md:h-32 border border-slate-100 p-2 transition-all relative group ${dayOccs.length > 0 ? 'cursor-pointer hover:bg-emerald-50/50 hover:shadow-inner' : 'bg-white'}`}
+        >
+          <div className="flex justify-between items-start">
+            <span className={`text-xs font-black w-6 h-6 flex items-center justify-center rounded-full ${isToday ? 'bg-emerald-500 text-white' : 'text-slate-400'}`}>
+              {day}
+            </span>
+            {dayOccs.length > 0 && (
+              <span className="bg-emerald-100 text-emerald-600 text-[9px] font-black px-1.5 py-0.5 rounded-md">
+                {dayOccs.length}
+              </span>
+            )}
+          </div>
+          
+          <div className="mt-2 space-y-1 overflow-hidden">
+            {dayOccs.slice(0, 2).map((occ, idx) => (
+              <div key={idx} className="text-[9px] truncate font-bold text-slate-500 bg-slate-100 px-1 rounded border-l-2 border-emerald-400">
+                {occ.type}: {occ.type === 'Checklist do Setor' ? 'Preenchido' : getActualDescription(occ.description)}
+              </div>
+            ))}
+            {dayOccs.length > 2 && (
+              <div className="text-[8px] font-black text-emerald-500 text-center">
+                + {dayOccs.length - 2} mais
+              </div>
+            )}
+          </div>
+
+          {dayOccs.length > 0 && (
+            <div className="absolute inset-0 bg-emerald-500/0 group-hover:bg-emerald-500/5 transition-colors pointer-events-none"></div>
+          )}
+        </div>
+      );
+    }
+
+    return days;
+  };
+
+  const changeMonth = (offset: number) => {
+    setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + offset, 1));
+  };
+
+  return (
+    <div className="w-full px-4 space-y-6 animate-in fade-in duration-500">
+      {message && (
+        <div className={`fixed top-4 right-4 z-[100] px-6 py-3 rounded-xl shadow-lg border animate-in slide-in-from-top-4 duration-300 ${
+          message.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' :
+          message.type === 'error' ? 'bg-red-50 border-red-200 text-red-700' :
+          'bg-blue-50 border-blue-200 text-blue-700'
+        }`}>
+          <p className="font-bold text-sm">{message.text}</p>
+        </div>
+      )}
+
+      {deleteConfirmId && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white max-w-sm w-full rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="p-6">
+              <h3 className="text-xl font-black text-slate-800 mb-2">Excluir Ocorrência</h3>
+              <p className="text-slate-600 text-sm font-medium">Tem certeza que deseja excluir esta ocorrência? Esta ação ficará registrada na auditoria.</p>
+            </div>
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+              <button 
+                onClick={() => setDeleteConfirmId(null)}
+                className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-200 rounded-xl transition-all"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={confirmDeleteOccurrence}
+                className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl shadow-sm transition-all"
+              >
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showFinalizeConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white max-w-sm w-full rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="p-6">
+              <h3 className="text-xl font-black text-slate-800 mb-2">Finalizar Turno</h3>
+              <p className="text-slate-600 text-sm font-medium">Deseja finalizar o turno e gerar o modelo de e-mail?</p>
+            </div>
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+              <button 
+                onClick={() => setShowFinalizeConfirm(false)}
+                className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-200 rounded-xl transition-all"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={confirmFinalizeShift}
+                className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl shadow-sm transition-all"
+              >
+                Finalizar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">
+            <ClipboardCheck className="text-emerald-500" size={28} />
+            Passagem de Plantão
+          </h2>
+          <p className="text-slate-500 text-sm font-medium">Registre as ocorrências do seu turno em tempo real.</p>
+        </div>
+
+        <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm self-start">
+          <button 
+            onClick={() => setActiveView('current')}
+            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${activeView === 'current' ? 'bg-emerald-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            <Clock size={16} /> Turno Atual
+          </button>
+          <button 
+            onClick={() => setActiveView('history')}
+            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${activeView === 'history' ? 'bg-emerald-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            <History size={16} /> Histórico
+          </button>
+          {userName?.toUpperCase() === 'DENY' && (
+            <button 
+              onClick={() => setActiveView('audit')}
+              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${activeView === 'audit' ? 'bg-amber-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+            >
+              <Eye size={16} /> Verificar alterações
+            </button>
+          )}
+        </div>
+      </div>
+
+      {activeView === 'current' ? (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Form Section */}
+          <div className="lg:col-span-1 space-y-6">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                  <Plus size={18} className="text-emerald-500" />
+                  {editingId ? 'Editar Ocorrência' : 'Nova Ocorrência'}
+                </h3>
+                <div className="flex bg-slate-200 p-0.5 rounded-lg text-[10px] font-black uppercase">
+                  <button 
+                    onClick={() => setShift('Diurno')}
+                    className={`px-2 py-1 rounded-md transition-all ${shift === 'Diurno' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500'}`}
+                  >
+                    Diurno
+                  </button>
+                  <button 
+                    onClick={() => setShift('Noturno')}
+                    className={`px-2 py-1 rounded-md transition-all ${shift === 'Noturno' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500'}`}
+                  >
+                    Noturno
+                  </button>
+                </div>
+              </div>
+              <form onSubmit={handleAddOccurrence} className="p-4 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Tipo</label>
+                    <select 
+                      value={type}
+                      onChange={(e) => setType(e.target.value as OccurrenceType)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all"
+                    >
+                      {TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  {type === 'Checklist do Setor' ? (
+                    <div className="space-y-1.5 col-span-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Checklist</label>
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-2 space-y-2">
+                        <label className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 p-1 rounded transition-colors">
+                          <input type="checkbox" checked={checklistCafeteira} onChange={e => setChecklistCafeteira(e.target.checked)} className="w-4 h-4 text-emerald-500 rounded border-slate-300 focus:ring-emerald-500" />
+                          <Coffee size={14} className="text-slate-400" />
+                          <span className="text-xs font-medium text-slate-700">Cafeteira limpa</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 p-1 rounded transition-colors">
+                          <input type="checkbox" checked={checklistLimpeza} onChange={e => setChecklistLimpeza(e.target.checked)} className="w-4 h-4 text-emerald-500 rounded border-slate-300 focus:ring-emerald-500" />
+                          <Sparkles size={14} className="text-slate-400" />
+                          <span className="text-xs font-medium text-slate-700">Limpeza da Sala</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 p-1 rounded transition-colors">
+                          <input type="checkbox" checked={checklistOrganizacao} onChange={e => setChecklistOrganizacao(e.target.checked)} className="w-4 h-4 text-emerald-500 rounded border-slate-300 focus:ring-emerald-500" />
+                          <LayoutDashboard size={14} className="text-slate-400" />
+                          <span className="text-xs font-medium text-slate-700">Organização das Mesas</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 p-1 rounded transition-colors">
+                          <input type="checkbox" checked={checklistArCondicionado} onChange={e => setChecklistArCondicionado(e.target.checked)} className="w-4 h-4 text-emerald-500 rounded border-slate-300 focus:ring-emerald-500" />
+                          <ThermometerSnowflake size={14} className="text-slate-400" />
+                          <span className="text-xs font-medium text-slate-700">Ar condicionado</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 p-1 rounded transition-colors">
+                          <input type="checkbox" checked={checklistAlertasRastreador} onChange={e => setChecklistAlertasRastreador(e.target.checked)} className="w-4 h-4 text-emerald-500 rounded border-slate-300 focus:ring-emerald-500" />
+                          <Map size={14} className="text-slate-400" />
+                          <span className="text-xs font-medium text-slate-700">Alertas Rastreador Tratados</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 p-1 rounded transition-colors">
+                          <input type="checkbox" checked={checklistAlertasCFTV} onChange={e => setChecklistAlertasCFTV(e.target.checked)} className="w-4 h-4 text-emerald-500 rounded border-slate-300 focus:ring-emerald-500" />
+                          <Video size={14} className="text-slate-400" />
+                          <span className="text-xs font-medium text-slate-700">Alertas CFTV Tratados</span>
+                        </label>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Base</label>
+                      <select 
+                        value={base}
+                        onChange={(e) => setBase(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all"
+                      >
+                        {BASES.map(b => <option key={b} value={b}>{b}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Descrição</label>
+                  <textarea 
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Descreva o que aconteceu..."
+                    rows={4}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-medium focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all resize-none"
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <button 
+                    type="submit"
+                    disabled={isSaving || (type !== 'Checklist do Setor' && !description.trim())}
+                    className="flex-1 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-black py-3 rounded-xl shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 active:scale-95"
+                  >
+                    {isSaving ? <MoreHorizontal className="animate-pulse" /> : <>{editingId ? <CheckCircle2 size={18} /> : <Plus size={18} />} {editingId ? 'Salvar' : 'Adicionar'}</>}
+                  </button>
+                  {editingId && (
+                    <button 
+                      type="button"
+                      onClick={cancelEdit}
+                      className="px-4 bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold rounded-xl transition-all"
+                    >
+                      Cancelar
+                    </button>
+                  )}
+                </div>
+              </form>
+            </div>
+
+            <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center gap-3 text-emerald-700">
+                <Info size={20} />
+                <h4 className="font-bold text-sm">Dica de Uso</h4>
+              </div>
+              <p className="text-xs text-emerald-600 leading-relaxed font-medium">
+                Insira as ocorrências assim que elas acontecerem. Ao final do turno, clique em <strong>Finalizar Turno</strong> para gerar o texto formatado para o e-mail.
+              </p>
+            </div>
+          </div>
+
+          {/* List Section */}
+          <div className="lg:col-span-2 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                <ClipboardCheck size={20} className="text-emerald-500" />
+                Ocorrências do Turno ({occurrences.length})
+              </h3>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => handleCopyEmail()}
+                  disabled={occurrences.length === 0}
+                  className="bg-white border border-slate-200 text-slate-600 hover:text-emerald-600 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all disabled:opacity-50"
+                >
+                  {copySuccess ? <CheckCircle2 size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                  Copiar E-mail
+                </button>
+                <button 
+                  onClick={handleFinalizeShift}
+                  disabled={isLoading || occurrences.length === 0}
+                  className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-1.5 rounded-lg text-xs font-black flex items-center gap-2 shadow-md shadow-emerald-500/10 transition-all disabled:opacity-50"
+                >
+                  <Send size={14} /> Finalizar Turno
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
+              {occurrences.length === 0 ? (
+                <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center space-y-3">
+                  <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto text-slate-300">
+                    <ClipboardCheck size={24} />
+                  </div>
+                  <p className="text-slate-400 text-sm font-medium">Nenhuma ocorrência registrada neste turno.</p>
+                </div>
+              ) : (
+                occurrences.map((occ, idx) => (
+                  <div key={`${occ.id}-${idx}`} className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm hover:shadow-md transition-all group">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-2 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md text-[10px] font-black uppercase flex items-center gap-1">
+                            <MapPin size={10} /> {occ.base}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
+                            occ.type === 'Ocorrência' ? 'bg-red-100 text-red-600' :
+                            occ.type === 'Orientação' ? 'bg-blue-100 text-blue-600' :
+                            occ.type === 'Monitoramento' ? 'bg-emerald-100 text-emerald-600' :
+                            'bg-slate-100 text-slate-600'
+                          }`}>
+                            {occ.type}
+                          </span>
+                          <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
+                            <Clock size={10} /> {new Date(occ.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          <span className="text-[10px] font-black text-emerald-600 uppercase ml-auto">
+                            {occ.operator}
+                          </span>
+                          <div className="flex items-center gap-1 ml-2">
+                            <button 
+                              onClick={() => handleEdit(occ)}
+                              className="p-1 text-slate-300 hover:text-blue-500 transition-colors"
+                              title="Editar Ocorrência"
+                            >
+                              <Pencil size={14} />
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteOccurrence(occ.id)}
+                              className="p-1 text-slate-300 hover:text-red-500 transition-colors"
+                              title="Excluir Ocorrência"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="text-sm text-slate-700 font-medium leading-relaxed">
+                          {occ.type === 'Checklist do Setor' ? (() => {
+                            const decoded = decodeChecklist(getActualDescription(occ.description));
+                            if (decoded) {
+                              return (
+                                <div className="flex flex-col gap-1 mt-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                  <div className="flex items-center gap-2">
+                                    <span className={`font-bold ${decoded.cafeteira ? 'text-emerald-500' : 'text-red-500'}`}>{decoded.cafeteira ? '✓' : '✗'}</span>
+                                    <span>Cafeteira limpa</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className={`font-bold ${decoded.limpeza ? 'text-emerald-500' : 'text-red-500'}`}>{decoded.limpeza ? '✓' : '✗'}</span>
+                                    <span>Limpeza e conservação da Sala</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className={`font-bold ${decoded.organizacao ? 'text-emerald-500' : 'text-red-500'}`}>{decoded.organizacao ? '✓' : '✗'}</span>
+                                    <span>Organização das Mesas</span>
+                                  </div>
+                                  {decoded.description && (
+                                    <div className="mt-2 text-xs text-slate-500 italic">
+                                      Obs: {decoded.description}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            }
+                            return getActualDescription(occ.description);
+                          })() : getActualDescription(occ.description)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      ) : activeView === 'history' ? (
+        <div className="space-y-6">
+          {/* History View */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-emerald-50 rounded-xl text-emerald-500">
+                <CalendarIcon size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-700">Histórico de Plantões</h3>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Visualize registros passados</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 mr-2">
+                <button 
+                  onClick={() => setHistoryMode('list')}
+                  className={`p-2 rounded-lg transition-all ${historyMode === 'list' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                  title="Visão em Lista"
+                >
+                  <Filter size={18} />
+                </button>
+                <button 
+                  onClick={() => setHistoryMode('calendar')}
+                  className={`p-2 rounded-lg transition-all ${historyMode === 'calendar' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                  title="Visão em Calendário"
+                >
+                  <LayoutGrid size={18} />
+                </button>
+              </div>
+
+              {historyMode === 'list' && (
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input 
+                      type="date" 
+                      value={filterDate}
+                      onChange={(e) => setFilterDate(e.target.value)}
+                      className="bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2 text-sm font-bold focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all"
+                    />
+                  </div>
+                  {filterDate && (
+                    <button 
+                      onClick={() => setFilterDate("")}
+                      className="p-2 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 rounded-xl border border-slate-200 transition-all"
+                      title="Limpar filtro"
+                    >
+                      <X size={18} />
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {historyMode === 'calendar' && (
+                <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1">
+                  <button onClick={() => changeMonth(-1)} className="p-1 hover:bg-white rounded-lg text-slate-400 hover:text-emerald-500 transition-all">
+                    <ChevronLeft size={20} />
+                  </button>
+                  <span className="text-sm font-black text-slate-700 min-w-[120px] text-center uppercase">
+                    {calendarDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+                  </span>
+                  <button onClick={() => changeMonth(1)} className="p-1 hover:bg-white rounded-lg text-slate-400 hover:text-emerald-500 transition-all">
+                    <ChevronRight size={20} />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {historyMode === 'list' ? (
+            <div className="space-y-4">
+              {sortedHistoryDates.filter(d => !filterDate || d === filterDate).length === 0 ? (
+                <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center space-y-3">
+                  <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto text-slate-300">
+                    <History size={24} />
+                  </div>
+                  <p className="text-slate-400 text-sm font-medium">Nenhum histórico encontrado.</p>
+                </div>
+              ) : (
+                sortedHistoryDates.filter(d => !filterDate || d === filterDate).map(date => {
+                  const dayOccs = historyByDate[date];
+                  const isExpanded = expandedDates.includes(date);
+                  
+                  return (
+                    <div key={date} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all">
+                      <button 
+                        onClick={() => toggleDate(date)}
+                        className="w-full p-4 flex items-center justify-between hover:bg-slate-50 transition-colors"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="bg-emerald-500 text-white w-10 h-10 rounded-xl flex flex-col items-center justify-center">
+                            <span className="text-[10px] font-black leading-none">{new Date(date + 'T12:00:00').toLocaleDateString('pt-BR', { month: 'short' }).toUpperCase()}</span>
+                            <span className="text-lg font-black leading-none">{new Date(date + 'T12:00:00').getDate()}</span>
+                          </div>
+                          <div className="text-left">
+                            <h4 className="font-bold text-slate-700">{new Date(date + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long' })}</h4>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase">{dayOccs.length} Ocorrências registradas</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="flex -space-x-2">
+                            {Array.from(new Set(dayOccs.map(o => o.operator))).slice(0, 3).map((op, i) => (
+                              <div key={i} className="w-6 h-6 rounded-full bg-slate-200 border-2 border-white flex items-center justify-center text-[8px] font-black text-slate-500" title={op as string}>
+                                {(op as string).substring(0, 2)}
+                              </div>
+                            ))}
+                          </div>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleCopyEmail(dayOccs); }}
+                            className="p-2 text-slate-400 hover:text-emerald-500 transition-colors"
+                            title="Copiar Modelo de E-mail"
+                          >
+                            <Copy size={16} />
+                          </button>
+                          {isExpanded ? <ChevronUp size={20} className="text-slate-400" /> : <ChevronDown size={20} className="text-slate-400" />}
+                        </div>
+                      </button>
+
+                      {isExpanded && (
+                        <div className="p-4 border-t border-slate-100 bg-slate-50/30 animate-in slide-in-from-top-2 duration-300">
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            {['Diurno', 'Noturno'].map(s => {
+                              const shiftOccs = dayOccs.filter(o => o.shift === s);
+                              
+                              if (shiftOccs.length === 0) return (
+                                <div key={s} className="space-y-3 opacity-30 hidden lg:block">
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-slate-300"></span>
+                                    <h5 className="text-xs font-black text-slate-400 uppercase tracking-widest">Turno {s} - Sem Ocorrências</h5>
+                                  </div>
+                                </div>
+                              );
+
+                              const groupedByBase = shiftOccs.reduce((acc, occ) => {
+                                if (!acc[occ.base]) acc[occ.base] = [];
+                                acc[occ.base].push(occ);
+                                return acc;
+                              }, {} as Record<string, typeof shiftOccs>);
+
+                              const sortedBases = Object.keys(groupedByBase).sort((a, b) => {
+                                if (a === 'Geral') return 1;
+                                if (b === 'Geral') return -1;
+                                return a.localeCompare(b, 'pt-BR');
+                              });
+
+                              return (
+                                <div key={s} className="space-y-3">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                      <h5 className="text-xs font-black text-slate-400 uppercase tracking-widest">Turno {s}</h5>
+                                    </div>
+                                    <button 
+                                      onClick={(e) => { e.stopPropagation(); handleCopyEmail(shiftOccs); }}
+                                      className="px-2 py-1 text-[10px] font-bold text-slate-500 bg-white border border-slate-200 hover:text-emerald-600 hover:border-emerald-200 rounded-lg flex items-center gap-1 transition-all shadow-sm"
+                                      title={`Copiar Modelo de E-mail - Turno ${s}`}
+                                    >
+                                      <Copy size={12} /> Copiar Turno
+                                    </button>
+                                  </div>
+                                  <div className="grid grid-cols-1 gap-4">
+                                    {sortedBases.map(base => (
+                                      <div key={base} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                                        <div className={`${BASE_COLORS[base] || 'bg-slate-500'} px-3 py-1 flex items-center justify-between`}>
+                                          <span className="text-[9px] font-black text-white uppercase tracking-wider">{base}</span>
+                                        </div>
+                                        <div className="p-2 space-y-2">
+                                          {groupedByBase[base].map((occ, idx) => (
+                                            <div key={`${occ.id}-${idx}`} className={`space-y-1.5 ${idx > 0 ? 'pt-2 border-t border-slate-100' : ''}`}>
+                                              <div className="flex items-center justify-between">
+                                                <span className={`px-1.5 py-0.5 rounded text-[7px] font-black uppercase ${
+                                                  occ.type === 'Ocorrência' ? 'bg-red-100 text-red-600' :
+                                                  occ.type === 'Orientação' ? 'bg-blue-100 text-blue-600' :
+                                                  occ.type === 'Monitoramento' ? 'bg-emerald-100 text-emerald-600' :
+                                                  occ.type === 'CFTV' ? 'bg-purple-100 text-purple-600' :
+                                                  'bg-slate-100 text-slate-600'
+                                                }`}>
+                                                  {occ.type}
+                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                  <span className="text-[7px] font-bold text-slate-300">{occ.operator} • {new Date(occ.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                                  <button 
+                                                    onClick={() => handleDeleteOccurrence(occ.id)}
+                                                    className="text-slate-300 hover:text-red-500 transition-colors"
+                                                    title="Excluir Ocorrência"
+                                                  >
+                                                    <X size={10} />
+                                                  </button>
+                                                </div>
+                                              </div>
+                                              <div className="text-[11px] text-slate-600 font-medium leading-relaxed">
+                                                {occ.type === 'Checklist do Setor' ? (() => {
+                                                  const decoded = decodeChecklist(getActualDescription(occ.description));
+                                                  if (decoded) {
+                                                    return (
+                                                      <div className="flex flex-col gap-1 mt-1 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                                        <div className="flex items-center gap-2">
+                                                          <span className={`font-bold ${decoded.cafeteira ? 'text-emerald-500' : 'text-red-500'}`}>{decoded.cafeteira ? '✓' : '✗'}</span>
+                                                          <span>Cafeteira limpa</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                          <span className={`font-bold ${decoded.limpeza ? 'text-emerald-500' : 'text-red-500'}`}>{decoded.limpeza ? '✓' : '✗'}</span>
+                                                          <span>Limpeza e conservação da Sala</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                          <span className={`font-bold ${decoded.organizacao ? 'text-emerald-500' : 'text-red-500'}`}>{decoded.organizacao ? '✓' : '✗'}</span>
+                                                          <span>Organização das Mesas</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                          <span className={`font-bold ${decoded.arCondicionado ? 'text-emerald-500' : 'text-red-500'}`}>{decoded.arCondicionado ? '✓' : '✗'}</span>
+                                                          <span>Ar condicionado</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                          <span className={`font-bold ${decoded.alertasRastreador ? 'text-emerald-500' : 'text-red-500'}`}>{decoded.alertasRastreador ? '✓' : '✗'}</span>
+                                                          <span>Alertas Rastreador Tratados</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                          <span className={`font-bold ${decoded.alertasCFTV ? 'text-emerald-500' : 'text-red-500'}`}>{decoded.alertasCFTV ? '✓' : '✗'}</span>
+                                                          <span>Alertas CFTV Tratados</span>
+                                                        </div>
+                                                        {decoded.description && (
+                                                          <div className="mt-1 text-[10px] text-slate-500 italic">
+                                                            Obs: {decoded.description}
+                                                          </div>
+                                                        )}
+                                                      </div>
+                                                    );
+                                                  }
+                                                  return getActualDescription(occ.description);
+                                                })() : getActualDescription(occ.description)}
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden animate-in zoom-in-95 duration-300">
+              <div className="grid grid-cols-7 bg-slate-50 border-b border-slate-200">
+                {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(day => (
+                  <div key={day} className="py-3 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    {day}
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7">
+                {renderCalendar()}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : activeView === 'audit' ? (
+        <div className="space-y-6">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+            <h3 className="text-lg font-black text-slate-800 mb-4 flex items-center gap-2">
+              <Eye className="text-amber-500" size={20} />
+              Auditoria de Alterações e Exclusões
+            </h3>
+            
+            {isLoading ? (
+              <div className="flex justify-center p-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500"></div>
+              </div>
+            ) : auditOccurrences.length === 0 ? (
+              <div className="text-center p-12 text-slate-400 font-medium bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                Nenhuma alteração ou exclusão registrada.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {auditOccurrences.map((occ, idx) => {
+                  const actualDesc = getActualDescription(occ.description);
+                  const auditLog = getAuditLog(occ.description);
+                  const isDeleted = auditLog.includes('[EXCLUÍDO');
+                  
+                  return (
+                    <div key={`${occ.id}-${idx}`} className={`p-4 rounded-xl border ${isDeleted ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100'}`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black uppercase bg-white px-2 py-1 rounded-md shadow-sm text-slate-600">
+                            {occ.base}
+                          </span>
+                          <span className="text-xs font-black uppercase bg-white px-2 py-1 rounded-md shadow-sm text-slate-600">
+                            {occ.type}
+                          </span>
+                          {isDeleted && (
+                            <span className="text-xs font-black uppercase bg-red-500 text-white px-2 py-1 rounded-md shadow-sm">
+                              Excluído
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs font-bold text-slate-500">
+                          {new Date(occ.createdAt).toLocaleString('pt-BR')}
+                        </span>
+                      </div>
+                      
+                      <div className="mb-3">
+                        <div className="text-sm font-medium text-slate-700">
+                          {occ.type === 'Checklist do Setor' ? (() => {
+                            const decoded = decodeChecklist(actualDesc);
+                            if (decoded) {
+                              return (
+                                <div className="flex flex-col gap-1 mt-2 bg-white/50 p-3 rounded-xl border border-black/5">
+                                  <div className="flex items-center gap-2">
+                                    <span className={`font-bold ${decoded.cafeteira ? 'text-emerald-500' : 'text-red-500'}`}>{decoded.cafeteira ? '✓' : '✗'}</span>
+                                    <span>Cafeteira limpa</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className={`font-bold ${decoded.limpeza ? 'text-emerald-500' : 'text-red-500'}`}>{decoded.limpeza ? '✓' : '✗'}</span>
+                                    <span>Limpeza e conservação da Sala</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className={`font-bold ${decoded.organizacao ? 'text-emerald-500' : 'text-red-500'}`}>{decoded.organizacao ? '✓' : '✗'}</span>
+                                    <span>Organização das Mesas</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className={`font-bold ${decoded.arCondicionado ? 'text-emerald-500' : 'text-red-500'}`}>{decoded.arCondicionado ? '✓' : '✗'}</span>
+                                    <span>Ar condicionado</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className={`font-bold ${decoded.alertasRastreador ? 'text-emerald-500' : 'text-red-500'}`}>{decoded.alertasRastreador ? '✓' : '✗'}</span>
+                                    <span>Alertas Rastreador Tratados</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className={`font-bold ${decoded.alertasCFTV ? 'text-emerald-500' : 'text-red-500'}`}>{decoded.alertasCFTV ? '✓' : '✗'}</span>
+                                    <span>Alertas CFTV Tratados</span>
+                                  </div>
+                                  {decoded.description && (
+                                    <div className="mt-2 text-xs text-slate-500 italic">
+                                      Obs: {decoded.description}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            }
+                            return actualDesc;
+                          })() : actualDesc}
+                        </div>
+                      </div>
+                      
+                      <div className="mt-3 pt-3 border-t border-black/5">
+                        <h4 className="text-xs font-black text-slate-500 uppercase mb-2">Histórico de Alterações:</h4>
+                        <div className="space-y-1">
+                          {auditLog.split('\n').filter(Boolean).map((log, i) => (
+                            <div key={i} className="text-xs font-medium text-slate-600 flex items-start gap-2">
+                              <span className="mt-0.5 w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0"></span>
+                              <span>{log}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      
+                      <div className="mt-3 text-xs font-bold text-slate-400 text-right">
+                        Operador Original: {occ.operator}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Premium Tooltip Modal */}
+      {selectedDateOccs && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-4xl max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-300 border border-emerald-100">
+            <div className="p-6 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-4">
+                <div className="bg-white/20 p-3 rounded-2xl backdrop-blur-md">
+                  <CalendarIcon size={28} />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-black leading-none">
+                    {new Date(selectedDateOccs.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}
+                  </h3>
+                  <p className="text-emerald-100 text-xs font-bold uppercase tracking-widest mt-1">
+                    {selectedDateOccs.occs.length} Ocorrências registradas
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => handleCopyEmail(selectedDateOccs.occs)}
+                  className="bg-white/20 hover:bg-white/30 p-2.5 rounded-xl transition-all flex items-center gap-2 text-sm font-bold"
+                >
+                  <Copy size={18} /> Copiar E-mail
+                </button>
+                <button 
+                  onClick={() => setSelectedDateOccs(null)}
+                  className="bg-white/20 hover:bg-white/30 p-2.5 rounded-xl transition-all"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-slate-50/30">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {['Diurno', 'Noturno'].map(s => {
+                  const shiftOccs = selectedDateOccs.occs.filter(o => o.shift === s);
+                  
+                  if (shiftOccs.length === 0) return (
+                    <div key={s} className="space-y-4 opacity-30 hidden lg:block">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-slate-100 text-slate-400">
+                          <Clock size={20} />
+                        </div>
+                        <h4 className="text-lg font-black text-slate-400 uppercase tracking-tight">Turno {s} - Sem Ocorrências</h4>
+                      </div>
+                    </div>
+                  );
+
+                  const groupedByBase = shiftOccs.reduce((acc, occ) => {
+                    if (!acc[occ.base]) acc[occ.base] = [];
+                    acc[occ.base].push(occ);
+                    return acc;
+                  }, {} as Record<string, typeof shiftOccs>);
+
+                  const sortedBases = Object.keys(groupedByBase).sort((a, b) => {
+                    if (a === 'Geral') return 1;
+                    if (b === 'Geral') return -1;
+                    return a.localeCompare(b, 'pt-BR');
+                  });
+
+                  return (
+                    <div key={s} className="space-y-4">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${s === 'Diurno' ? 'bg-orange-100 text-orange-500' : 'bg-indigo-100 text-indigo-500'}`}>
+                          <Clock size={20} />
+                        </div>
+                        <h4 className="text-lg font-black text-slate-700 uppercase tracking-tight">Turno {s}</h4>
+                        <div className="flex-1 h-px bg-slate-200"></div>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleCopyEmail(shiftOccs); }}
+                          className="px-3 py-1.5 text-xs font-bold text-slate-500 bg-white border border-slate-200 hover:text-emerald-600 hover:border-emerald-200 rounded-xl flex items-center gap-2 transition-all shadow-sm"
+                          title={`Copiar Modelo de E-mail - Turno ${s}`}
+                        >
+                          <Copy size={14} /> Copiar Turno
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-6">
+                        {sortedBases.map(base => (
+                          <div key={base} className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all group relative overflow-hidden flex flex-col">
+                            <div className={`${BASE_COLORS[base] || 'bg-slate-500'} px-4 py-2 flex items-center justify-between`}>
+                              <span className="text-xs font-black text-white uppercase tracking-widest">{base}</span>
+                            </div>
+                            <div className="p-5 space-y-5">
+                              {groupedByBase[base].map((occ, idx) => (
+                                <div key={`${occ.id}-${idx}`} className={`space-y-3 ${idx > 0 ? 'pt-5 border-t border-slate-100' : ''}`}>
+                                  <div className="flex items-center justify-between">
+                                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
+                                      occ.type === 'Ocorrência' ? 'bg-red-100 text-red-600' :
+                                      occ.type === 'Orientação' ? 'bg-blue-100 text-blue-600' :
+                                      occ.type === 'Monitoramento' ? 'bg-emerald-100 text-emerald-600' :
+                                      occ.type === 'CFTV' ? 'bg-purple-100 text-purple-600' :
+                                      'bg-slate-100 text-slate-600'
+                                    }`}>
+                                      {occ.type}
+                                    </span>
+                                    <span className="text-[10px] font-bold text-slate-400">
+                                      {new Date(occ.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                  </div>
+                                  <div className="text-sm text-slate-600 font-medium leading-relaxed">
+                                    {occ.type === 'Checklist do Setor' ? (() => {
+                                      const decoded = decodeChecklist(getActualDescription(occ.description));
+                                      if (decoded) {
+                                        return (
+                                          <div className="flex flex-col gap-1 mt-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                            <div className="flex items-center gap-2">
+                                              <span className={`font-bold ${decoded.cafeteira ? 'text-emerald-500' : 'text-red-500'}`}>{decoded.cafeteira ? '✓' : '✗'}</span>
+                                              <span>Cafeteira limpa</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                              <span className={`font-bold ${decoded.limpeza ? 'text-emerald-500' : 'text-red-500'}`}>{decoded.limpeza ? '✓' : '✗'}</span>
+                                              <span>Limpeza e conservação da Sala</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                              <span className={`font-bold ${decoded.organizacao ? 'text-emerald-500' : 'text-red-500'}`}>{decoded.organizacao ? '✓' : '✗'}</span>
+                                              <span>Organização das Mesas</span>
+                                            </div>
+                                            {decoded.description && (
+                                              <div className="mt-2 text-xs text-slate-500 italic">
+                                                Obs: {decoded.description}
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      }
+                                      return getActualDescription(occ.description);
+                                    })() : getActualDescription(occ.description)}
+                                  </div>
+                                  <div className="flex items-center justify-between pt-2">
+                                    <span className="text-[10px] font-black text-emerald-600 uppercase">
+                                      Operador: {occ.operator}
+                                    </span>
+                                    <div className="flex items-center gap-2">
+                                      <button 
+                                        onClick={() => { handleEdit(occ); setSelectedDateOccs(null); }}
+                                        className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-all"
+                                      >
+                                        <Pencil size={14} />
+                                      </button>
+                                      <button 
+                                        onClick={() => handleDeleteOccurrence(occ.id)}
+                                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                      >
+                                        <X size={14} />
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            
+            <div className="p-4 bg-white border-t border-slate-100 flex justify-end shrink-0">
+              <button 
+                onClick={() => setSelectedDateOccs(null)}
+                className="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black rounded-xl transition-all active:scale-95"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ShiftHandover;
