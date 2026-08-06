@@ -15,7 +15,7 @@ export const DEFAULT_GID_FLEET = "896980151";                  // Aba: Frota (No
 
 // ATENÇÃO: Atualize esta URL se você criar uma NOVA implantação.
 // Se usar "Gerenciar Implantações > Nova Versão", a URL mantém-se a mesma.
-export const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwu-icIgqj_8X_Ti1nFjn1o_6rrQ3jKRlfwtka8M4W1T74eT27b1Bi79kl2cmjNz1LQZg/exec";
+export const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzTiqlaLJVudo7XOpKnPlkyCF085kGRhHtSu22_ydLtJTf5fMCAriQZjBBly0vuY9WNjw/exec";
 
 export const DEFAULT_DRIVE_FOLDER_ID = "1QjcgNaMbyQECI5u_g1UAPW5ZySJ9dkJv"; 
 
@@ -102,25 +102,14 @@ const syncLocalState = () => {
     
     const storedScriptUrl = localStorage.getItem('risel_script_url');
     if (storedScriptUrl) {
-        // Se a URL salva for a antiga ou estiver vazia, atualiza para a nova
-        if (!storedScriptUrl || 
-            storedScriptUrl !== DEFAULT_SCRIPT_URL ||
-            storedScriptUrl.includes("AKfycby2kFOTlI") || 
-            storedScriptUrl.includes("AKfycbwn9RRlToYZb") ||
-            storedScriptUrl.includes("AKfycbxqOI9gNQIV") ||
-            storedScriptUrl.includes("AKfycbxxe7Lg9zmo") ||
-            storedScriptUrl.includes("AKfycbyOvPI851hM") ||
-            storedScriptUrl.includes("PToeg") ||
-            storedScriptUrl.includes("AKfycbzs1") ||
-            storedScriptUrl.includes("AKfycbzc-w3k-") ||
-            storedScriptUrl.includes("AKfycbSJm9mp4kkxL46TjZt8zTWzkb3tN1nS6GMC-t2ip_BumFHHQxm27VKBA2OdZdM6tkMEQ") ||
-            storedScriptUrl.includes("AKfycbxULV67kKqG") ||
-            storedScriptUrl.includes("AKfycbyzgKpoj7")) {
+        if (!storedScriptUrl || storedScriptUrl !== DEFAULT_SCRIPT_URL) {
             globalScriptUrl = DEFAULT_SCRIPT_URL;
             safeLocalStorageSetItem('risel_script_url', DEFAULT_SCRIPT_URL);
         } else {
             globalScriptUrl = storedScriptUrl;
         }
+    } else {
+        globalScriptUrl = DEFAULT_SCRIPT_URL;
     }
     
     const storedOverrides = localStorage.getItem('risel_driver_overrides');
@@ -2187,10 +2176,27 @@ export const resendEvaluationEmail = async (evalId: string, customEmail?: string
 };
 
 export const resendBolaPretaEmail = async (record: BolaPreta, customEmail?: string) => {
+    const filesToInclude: Array<{ name: string; base64: string }> = [];
+    const fields = ['celularImage', 'fumandoImage', 'cintoImage', 'printImage1', 'printImage2', 'printImage3', 'mapImage'] as const;
+    
+    fields.forEach(f => {
+        const fileName = record[f];
+        if (fileName && typeof fileName === 'string') {
+            const cached = getCachedBolaPretaImage(record.id, f);
+            if (cached) {
+                filesToInclude.push({
+                    name: fileName,
+                    base64: cached
+                });
+            }
+        }
+    });
+
     return await callAppsScript({
         type: 'resendBolaPretaEmail',
         record: record,
-        email: customEmail || 'deny.goncalves@risel.com.br'
+        email: customEmail || 'deny.goncalves@risel.com.br',
+        files: filesToInclude.length > 0 ? filesToInclude : undefined
     });
 };
 
