@@ -11,7 +11,7 @@ const TICKETS_FOLDER_ID = '1Msu9YThHz8TSEvtwU-oUUgsqd4zZ93Gi'; // Pasta para Ane
 const SHEET_NAME = 'Avaliação Direção';
 
 // Lista de e-mails destinatários das avaliações e relatórios
-const EMAIL_DESTINATARIOS_PRINCIPAIS = 'deny.goncalves@risel.com.br, wbreda@risel.com.br, rafael.ortega@risel.com.br, lucas.lima@risel.com.br, carlos.santos@risel.com.br, monitoramentopln@risel.com.br, felipe.assumpcao@risel.com.br';
+const EMAIL_DESTINATARIOS_PRINCIPAIS = 'deny.goncalves@risel.com.br, wbreda@risel.com.br, rafael.ortega@risel.com.br, carlos.santos@risel.com.br, monitoramentopln@risel.com.br, felipe.assumpcao@risel.com.br';
 const EMAIL_COPIA = ''; 
 const EMAIL_TESTE_EXCLUSIVO = 'deny.goncalves@risel.com.br';
 
@@ -60,6 +60,13 @@ function doPost(e) {
         sheet.getRange(lastRow, ctrlCol).setValue("ENVIADO_AUTO");
       } catch (errEmail) {
         console.error("Erro no envio automático: " + errEmail.toString());
+        try {
+           MailApp.sendEmail({
+             to: 'deny.goncalves@risel.com.br',
+             subject: 'ERRO AO ENVIAR AVALIAÇÃO: ' + (mappedData['MOTORISTA'] || 'N/A'),
+             htmlBody: 'Houve um erro ao enviar a avaliação:<br><br><b>Mensagem:</b> ' + errEmail.message + '<br><b>Stack:</b> ' + String(errEmail.stack)
+           });
+        } catch(ex) {}
       }
       return ContentService.createTextOutput("OK");
     }
@@ -327,7 +334,7 @@ function enviarEmailBolaPreta(d, emailDestino, reqFiles) {
     }
   }
 
-  const destinatarioFinal = emailDestino ? (emailDestino + ', monitoramento@risel.com.br') : (EMAIL_DESTINATARIOS_PRINCIPAIS + ', monitoramento@risel.com.br');
+  const destinatarioFinal = emailDestino ? (emailDestino + ', monitoramento@risel.com.br') : 'monitoramento@risel.com.br, deny.goncalves@risel.com.br';
 
   MailApp.sendEmail({
     to: destinatarioFinal,
@@ -1020,14 +1027,21 @@ function enviarRelatorio(data, destinatarioOverride, copiaOverride, reqFiles) {
     const headerUpper = headerClean.toUpperCase();
 
     if (['SIM', 'NÃO', 'NAO', 'NA'].includes(normVal) && !headerUpper.includes('ASSINATURA')) {
+      var processedElements = [];
       let range = body.findText(escapeRegExp(value));
       while (range) {
-        let cell = range.getElement().getParent();
+        let elem = range.getElement();
+        if (processedElements.indexOf(elem) !== -1) {
+          break; // Evita loop infinito no findText
+        }
+        processedElements.push(elem);
+
+        let cell = elem.getParent();
         while (cell && cell.getType() !== DocumentApp.ElementType.TABLE_CELL && cell.getType() !== DocumentApp.ElementType.BODY_SECTION) cell = cell.getParent();
         if (cell && cell.getType() === DocumentApp.ElementType.TABLE_CELL) {
           let color = (normVal === 'SIM') ? COR_RISEL_VERDE : (normVal === 'NA') ? COR_RISEL_AZUL : COR_RISEL_LARANJA;
           cell.asTableCell().setBackgroundColor(color);
-          range.getElement().asText().setForegroundColor(COR_FONTE_BRANCA).setBold(true).setBackgroundColor(color);
+          elem.asText().setForegroundColor(COR_FONTE_BRANCA).setBold(true).setBackgroundColor(color);
         }
         range = body.findText(escapeRegExp(value), range);
       }
@@ -1037,13 +1051,19 @@ function enviarRelatorio(data, destinatarioOverride, copiaOverride, reqFiles) {
   doc.saveAndClose();
   const pdfFile = copyFile.getAs(MimeType.PDF);
   
-  MailApp.sendEmail({
+  var mailOptions = {
     to: destinatarioOverride || EMAIL_DESTINATARIOS_PRINCIPAIS,
-    cc: copiaOverride !== undefined ? copiaOverride : EMAIL_COPIA,
     subject: 'AVALIAÇÃO DE DIREÇÃO - ' + motorista + ' (' + dataSomenteData + ')',
     htmlBody: getHtmlEmailBody({motorista, avaliador: data['AVALIADOR'], frota: data['FROTA'], dataAval: dataSomenteData, resultado}),
     attachments: [pdfFile].concat(imageAttachments)
-  });
+  };
+
+  var finalCc = (copiaOverride !== undefined && copiaOverride !== null) ? copiaOverride : EMAIL_COPIA;
+  if (finalCc && String(finalCc).trim() !== '') {
+    mailOptions.cc = String(finalCc).trim();
+  }
+
+  MailApp.sendEmail(mailOptions);
   
   copyFile.setTrashed(true);
 }
