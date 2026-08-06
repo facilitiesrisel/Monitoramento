@@ -3,7 +3,7 @@
 //               Versão: 2026-08-06.01 (RE-EMAIL & PDF FIX)
 // =========================================================
 
-const TEMPLATE_DOC_ID = '1M5vZvVQisHOT2NE7o46NENKrjH0ZW4fTAZrciYCNl7M'; 
+const TEMPLATE_DOC_ID = '1QRywgVapwOMtVXyTkCbqpz9Ndkw9Jxy31v_-yvsU3jA'; 
 const BOLA_PRETA_TEMPLATE_ID = '1NUrBlicrEUzAgUgyRmR4qp15WzDZod2taq4sZ1UyNnQ'; // Novo modelo Bola Preta
 const OUTPUT_FOLDER_ID = '10dGRmYvBLwtAhigtY3Zru-yAxHAPzF9U';
 const IMAGE_FOLDER_ID = '1QjcgNaMbyQECI5u_g1UAPW5ZySJ9dkJv'; 
@@ -64,6 +64,7 @@ function doPost(e) {
            MailApp.sendEmail({
              to: 'deny.goncalves@risel.com.br',
              subject: 'ERRO AO ENVIAR AVALIAÇÃO: ' + (mappedData['MOTORISTA'] || 'N/A'),
+             name: 'Sistema de Monitoramento Risel',
              htmlBody: 'Houve um erro ao enviar a avaliação:<br><br><b>Mensagem:</b> ' + errEmail.message + '<br><b>Stack:</b> ' + String(errEmail.stack)
            });
         } catch(ex) {}
@@ -116,6 +117,7 @@ function doPost(e) {
              MailApp.sendEmail({
                to: 'deny.goncalves@risel.com.br',
                subject: 'ERRO AO REENVIAR AVALIAÇÃO: ' + (mappedData['MOTORISTA'] || 'N/A'),
+               name: 'Sistema de Monitoramento Risel',
                htmlBody: 'Houve um erro ao reenviar a avaliação:<br><br><b>Mensagem:</b> ' + eResend.message + '<br><b>Stack:</b> ' + String(eResend.stack)
              });
           } catch(ex) {}
@@ -1088,13 +1090,30 @@ function enviarRelatorio(data, destinatarioOverride, copiaOverride, reqFiles) {
     copyFile = criarDocumentoRelatorioDinamico('Relatório ' + motorista + ' - ' + dataSomenteData, data, outputFolder, memoryFiles, imageFolder, imageAttachments);
   }
 
-  const pdfFile = copyFile.getAs(MimeType.PDF);
+  const pdfFileDoc = copyFile.getAs(MimeType.PDF);
+  var motoristaSanitized = motorista.replace(/[^a-zA-Z0-9]/g, '_');
+  pdfFileDoc.setName('Relatório_Avaliacao_' + motoristaSanitized + '_' + dataSomenteData.replace(/\//g, '-') + '_DOC.pdf');
   
+  // Gera também o PDF HTML formatado para comparação
+  var pdfFileHtml = null;
+  try {
+    pdfFileHtml = gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder);
+  } catch(eHtml) {
+    console.error("Erro ao gerar PDF HTML para avaliação: " + eHtml.toString());
+  }
+
+  var attachmentsList = [pdfFileDoc];
+  if (pdfFileHtml) {
+    attachmentsList.push(pdfFileHtml);
+  }
+  attachmentsList = attachmentsList.concat(imageAttachments);
+
   var mailOptions = {
     to: destinatarioOverride || EMAIL_DESTINATARIOS_PRINCIPAIS,
     subject: 'AVALIAÇÃO DE DIREÇÃO - ' + motorista + ' (' + dataSomenteData + ')',
+    name: 'Sistema de Monitoramento Risel',
     htmlBody: getHtmlEmailBody({motorista, avaliador: data['AVALIADOR'], frota: data['FROTA'], dataAval: dataSomenteData, resultado}),
-    attachments: [pdfFile].concat(imageAttachments)
+    attachments: attachmentsList
   };
 
   var finalCc = (copiaOverride !== undefined && copiaOverride !== null) ? copiaOverride : EMAIL_COPIA;
@@ -1105,6 +1124,243 @@ function enviarRelatorio(data, destinatarioOverride, copiaOverride, reqFiles) {
   MailApp.sendEmail(mailOptions);
   
   copyFile.setTrashed(true);
+}
+
+function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
+  var motorista = String(data['MOTORISTA'] || data['Motorista'] || 'MOTORISTA').trim().toUpperCase();
+  var avaliador = String(data['AVALIADOR'] || data['Avaliador'] || 'N/A').trim().toUpperCase();
+  var frota = String(data['FROTA'] || data['Frota'] || 'N/A').trim().toUpperCase();
+  
+  var resultado = data['RESULTADO GERAL DO ACOMPANHAMENTO'] || data['RESULTADO GERAL'] || data['RESULTADO'] || 'N/D';
+  if (typeof resultado === 'number') {
+    resultado = (resultado * 100).toFixed(2) + '%';
+  } else if (String(resultado).includes('0.') && !String(resultado).includes('%')) {
+    resultado = (parseFloat(resultado) * 100).toFixed(2) + '%';
+  }
+
+  var dataAval = data['DATA AVALIAÇÃO'] || data['Data Avaliação'] || '';
+  var dataFormatada = 'N/D';
+  if (dataAval instanceof Date) {
+    dataFormatada = Utilities.formatDate(dataAval, Session.getScriptTimeZone(), "dd/MM/yyyy");
+  } else if (typeof dataAval === 'string' && dataAval.trim() !== '') {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dataAval)) {
+      var p = dataAval.split('-');
+      dataFormatada = p[2] + '/' + p[1] + '/' + p[0];
+    } else {
+      dataFormatada = dataAval;
+    }
+  }
+
+  var dataEmissao = new Date().toLocaleString('pt-BR');
+
+  var IMAGE_HEADERS = [
+    'REGISTROS DE VERIFICAÇÃO DAS IMAGENS 1', 
+    'REGISTROS DE VERIFICAÇÃO DAS IMAGENS 2', 
+    'REGISTROS DE VERIFICAÇÃO DAS IMAGENS 3', 
+    'REGISTROS DE VERIFICAÇÃO DAS IMAGENS 4'
+  ];
+
+  var imgBlocks = [];
+  IMAGE_HEADERS.forEach(function(hdr, index) {
+    var fileName = String(data[hdr] || '').trim();
+    if (fileName) {
+      var base64 = obterImagemBase64(fileName, memoryFiles, imageFolder);
+      if (base64) {
+        imgBlocks.push({
+          num: index + 1,
+          name: fileName,
+          base64: base64
+        });
+      }
+    }
+  });
+
+  var imagesHtml = '';
+  if (imgBlocks.length > 0) {
+    imagesHtml += '<div style="margin-top: 25px; page-break-inside: avoid;">' +
+      '<h3 style="font-family: Arial, sans-serif; font-size: 11px; font-weight: bold; color: #006633; text-transform: uppercase; border-left: 4px solid #006633; padding-left: 8px; margin-bottom: 12px; letter-spacing: 0.5px;">Evidências e Registros Fotográficos</h3>' +
+      '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="table-layout: fixed; width: 100%;">';
+
+    for (var i = 0; i < imgBlocks.length; i += 2) {
+      imagesHtml += '<tr>';
+      
+      var b1 = imgBlocks[i];
+      imagesHtml += '<td width="49%" valign="top" style="width: 49%;">' +
+        '<div style="margin-bottom: 12px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 6px; background: #ffffff; text-align: center; page-break-inside: avoid;">' +
+          '<div style="border-radius: 6px; overflow: hidden; background: #f8fafc; text-align: center; height: 180px; width: 100%;">' +
+            '<img src="' + b1.base64 + '" style="width: 100%; height: 180px; display: block; object-fit: cover; border: 0;" />' +
+          '</div>' +
+          '<div style="background: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 9px; font-weight: bold; color: #334155; text-align: center; margin-top: 6px;">Foto ' + b1.num + ': ' + b1.name + '</div>' +
+        '</div>' +
+      '</td>';
+
+      if (i + 1 < imgBlocks.length) {
+        var b2 = imgBlocks[i+1];
+        imagesHtml += '<td width="2%" style="width: 2%;"></td>';
+        imagesHtml += '<td width="49%" valign="top" style="width: 49%;">' +
+          '<div style="margin-bottom: 12px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 6px; background: #ffffff; text-align: center; page-break-inside: avoid;">' +
+            '<div style="border-radius: 6px; overflow: hidden; background: #f8fafc; text-align: center; height: 180px; width: 100%;">' +
+              '<img src="' + b2.base64 + '" style="width: 100%; height: 180px; display: block; object-fit: cover; border: 0;" />' +
+            '</div>' +
+            '<div style="background: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 9px; font-weight: bold; color: #334155; text-align: center; margin-top: 6px;">Foto ' + b2.num + ': ' + b2.name + '</div>' +
+          '</div>' +
+        '</td>';
+      } else {
+        imagesHtml += '<td width="51%" style="width: 51%;"></td>';
+      }
+      imagesHtml += '</tr>';
+    }
+
+    imagesHtml += '</table></div>';
+  }
+
+  var tableRowsHtml = '';
+  var count = 0;
+
+  for (var k in data) {
+    var keyClean = String(k).trim();
+    if (!keyClean || keyClean === 'PROCESSED_SCRIPT' || keyClean === 'ROW_INDEX') continue;
+    if (IMAGE_HEADERS.includes(keyClean)) continue;
+
+    var rawVal = data[k];
+    var valStr = '';
+    if (rawVal instanceof Date) {
+      valStr = Utilities.formatDate(rawVal, Session.getScriptTimeZone(), "dd/MM/yyyy");
+    } else if (typeof rawVal === 'number') {
+      if (rawVal <= 1 && rawVal > 0) {
+        valStr = (rawVal * 100).toFixed(1) + '%';
+      } else {
+        valStr = String(rawVal);
+      }
+    } else {
+      valStr = String(rawVal ?? '').trim();
+    }
+
+    var valUpper = valStr.toUpperCase();
+    var badgeHtml = valStr;
+
+    if (['SIM', 'NÃO', 'NAO', 'NA', 'N/A'].includes(valUpper)) {
+      if (valUpper === 'SIM') {
+        badgeHtml = '<span style="background-color: #DCFCE7; color: #15803D; border: 1px solid #86EFAC; padding: 3px 8px; border-radius: 12px; font-weight: bold; font-size: 9px; display: inline-block;">SIM</span>';
+      } else if (valUpper === 'NÃO' || valUpper === 'NAO') {
+        badgeHtml = '<span style="background-color: #FEE2E2; color: #B91C1C; border: 1px solid #FCA5A5; padding: 3px 8px; border-radius: 12px; font-weight: bold; font-size: 9px; display: inline-block;">NÃO</span>';
+      } else {
+        badgeHtml = '<span style="background-color: #E0F2FE; color: #0369A1; border: 1px solid #BAE6FD; padding: 3px 8px; border-radius: 12px; font-weight: bold; font-size: 9px; display: inline-block;">N/A</span>';
+      }
+    } else if (valStr) {
+      badgeHtml = '<span style="font-weight: bold; color: #0f172a;">' + valStr + '</span>';
+    }
+
+    var rowBg = (count % 2 === 0) ? '#ffffff' : '#f8fafc';
+    tableRowsHtml += '<tr style="background-color: ' + rowBg + ';">' +
+      '<td style="padding: 6px 10px; border: 1px solid #e2e8f0; font-size: 9px; font-weight: bold; color: #334155; width: 65%;">' + keyClean + '</td>' +
+      '<td style="padding: 6px 10px; border: 1px solid #e2e8f0; font-size: 9px; text-align: center; width: 35%;">' + badgeHtml + '</td>' +
+    '</tr>';
+    count++;
+  }
+
+  var htmlContent = '<!DOCTYPE html>' +
+    '<html>' +
+    '<head>' +
+      '<meta charset="utf-8">' +
+      '<title>Relatório de Avaliação de Direção</title>' +
+      '<style>' +
+        '@page { size: A4; margin: 12mm 10mm 12mm 10mm; }' +
+        'body { font-family: Arial, sans-serif; color: #0f172a; background: #ffffff; margin: 0; padding: 0; }' +
+      '</style>' +
+    '</head>' +
+    '<body>' +
+      '<div style="height: 5px; background: linear-gradient(90deg, #006633 0%, #F99D1C 100%); margin-bottom: 12px; border-radius: 3px;"></div>' +
+
+      '<div style="border-bottom: 2px solid #006633; padding-bottom: 10px; margin-bottom: 16px;">' +
+        '<table width="100%" border="0" cellspacing="0" cellpadding="0">' +
+          '<tr>' +
+            '<td width="65%" valign="middle" align="left">' +
+              '<h1 style="margin: 0; font-family: Arial, sans-serif; font-size: 16px; font-weight: 900; color: #006633; letter-spacing: -0.3px; text-transform: uppercase;">RISEL COMBUSTÍVEIS</h1>' +
+              '<p style="margin: 2px 0 0 0; font-family: Arial, sans-serif; font-size: 9px; font-weight: bold; color: #F99D1C; text-transform: uppercase;">SISTEMA DE MONITORAMENTO E AVALIAÇÃO DE DIREÇÃO</p>' +
+            '</td>' +
+            '<td width="35%" align="right" valign="middle" style="font-family: monospace; font-size: 8px; color: #64748b; text-align: right;">' +
+              '<div><strong>EMISSÃO:</strong> ' + dataEmissao + '</div>' +
+              '<div><strong>SISTEMA:</strong> MONITORAMENTO RISEL</div>' +
+            '</td>' +
+          '</tr>' +
+        '</table>' +
+      '</div>' +
+
+      '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom: 16px; table-layout: fixed; width: 100%;">' +
+        '<tr>' +
+          '<td width="49%" valign="top">' +
+            '<div style="background-color: #f8fafc; border: 1.5px solid #006633; border-radius: 10px; padding: 10px; height: 52px;">' +
+              '<span style="font-size: 8px; color: #006633; font-weight: bold; text-transform: uppercase;">👤 Motorista</span>' +
+              '<div style="font-size: 12px; font-weight: 800; color: #0f172a; margin-top: 4px; text-transform: uppercase;">' + motorista + '</div>' +
+            '</div>' +
+          '</td>' +
+          '<td width="2%"></td>' +
+          '<td width="49%" valign="top">' +
+            '<div style="background-color: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px; height: 52px;">' +
+              '<span style="font-size: 8px; color: #475569; font-weight: bold; text-transform: uppercase;">📋 Avaliador</span>' +
+              '<div style="font-size: 12px; font-weight: 800; color: #0f172a; margin-top: 4px; text-transform: uppercase;">' + avaliador + '</div>' +
+            '</div>' +
+          '</td>' +
+        '</tr>' +
+        '<tr style="height: 8px;"><td colspan="3"></td></tr>' +
+        '<tr>' +
+          '<td width="49%" valign="top">' +
+            '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="table-layout: fixed; width: 100%;">' +
+              '<tr>' +
+                '<td width="48%" valign="top">' +
+                  '<div style="background-color: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px; height: 52px; text-align: center;">' +
+                    '<span style="font-size: 8px; color: #475569; font-weight: bold; text-transform: uppercase;">🚛 Frota</span>' +
+                    '<div style="font-size: 12px; font-weight: 800; color: #0f172a; margin-top: 4px;">' + frota + '</div>' +
+                  '</div>' +
+                '</td>' +
+                '<td width="4%"></td>' +
+                '<td width="48%" valign="top">' +
+                  '<div style="background-color: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px; height: 52px; text-align: center;">' +
+                    '<span style="font-size: 8px; color: #475569; font-weight: bold; text-transform: uppercase;">📅 Data</span>' +
+                    '<div style="font-size: 12px; font-weight: 800; color: #0f172a; margin-top: 4px;">' + dataFormatada + '</div>' +
+                  '</div>' +
+                '</td>' +
+              '</tr>' +
+            '</table>' +
+          '</td>' +
+          '<td width="2%"></td>' +
+          '<td width="49%" valign="top">' +
+            '<div style="background-color: #f0fdf4; border: 1.5px solid #16a34a; border-radius: 10px; padding: 10px; height: 52px; text-align: center;">' +
+              '<span style="font-size: 8px; color: #15803d; font-weight: bold; text-transform: uppercase;">🏆 Resultado Geral</span>' +
+              '<div style="font-size: 15px; font-weight: 900; color: #16a34a; margin-top: 3px;">' + resultado + '</div>' +
+            '</div>' +
+          '</td>' +
+        '</tr>' +
+      '</table>' +
+
+      '<div style="font-family: Arial, sans-serif; font-size: 11px; font-weight: bold; color: #006633; text-transform: uppercase; border-left: 4px solid #006633; padding-left: 8px; margin-top: 15px; margin-bottom: 10px; letter-spacing: 0.5px;">' +
+        'Detalhamento dos Itens Avaliados' +
+      '</div>' +
+
+      '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; margin-bottom: 18px; border: 1px solid #cbd5e1;">' +
+        '<thead>' +
+          '<tr style="background-color: #006633; color: #ffffff;">' +
+            '<th style="padding: 8px 10px; text-align: left; font-size: 10px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 65%;">Item de Avaliação</th>' +
+            '<th style="padding: 8px 10px; text-align: center; font-size: 10px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 35%;">Resultado / Resposta</th>' +
+          '</tr>' +
+        '</thead>' +
+        '<tbody>' +
+          tableRowsHtml +
+        '</tbody>' +
+      '</table>' +
+
+      imagesHtml +
+
+      '<div style="margin-top: 25px; padding-top: 10px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 8px; color: #94a3b8; font-family: sans-serif;">' +
+        'Relatório emitido automaticamente pelo Sistema de Monitoramento Risel Combustíveis.' +
+      '</div>' +
+    '</body>' +
+    '</html>';
+
+  var htmlOutput = HtmlService.createHtmlOutput(htmlContent);
+  var motoristaClean = motorista.replace(/[^a-zA-Z0-9]/g, '_');
+  return htmlOutput.getAs(MimeType.PDF).setName('Relatorio_Avaliacao_' + motoristaClean + '_HTML.pdf');
 }
 
 function escapeRegExp(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
