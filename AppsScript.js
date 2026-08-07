@@ -1127,31 +1127,20 @@ function enviarRelatorio(data, destinatarioOverride, copiaOverride, reqFiles) {
 }
 
 function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
-  var motorista = String(data['MOTORISTA'] || data['Motorista'] || 'MOTORISTA').trim().toUpperCase();
-  var avaliador = String(data['AVALIADOR'] || data['Avaliador'] || 'N/A').trim().toUpperCase();
-  var frota = String(data['FROTA'] || data['Frota'] || 'N/A').trim().toUpperCase();
-  
-  var resultado = data['RESULTADO GERAL DO ACOMPANHAMENTO'] || data['RESULTADO GERAL'] || data['RESULTADO'] || 'N/D';
-  if (typeof resultado === 'number') {
-    resultado = (resultado * 100).toFixed(2) + '%';
-  } else if (String(resultado).includes('0.') && !String(resultado).includes('%')) {
-    resultado = (parseFloat(resultado) * 100).toFixed(2) + '%';
-  }
-
-  var dataAval = data['DATA AVALIAÇÃO'] || data['Data Avaliação'] || '';
-  var dataFormatada = 'N/D';
-  if (dataAval instanceof Date) {
-    dataFormatada = Utilities.formatDate(dataAval, Session.getScriptTimeZone(), "dd/MM/yyyy");
-  } else if (typeof dataAval === 'string' && dataAval.trim() !== '') {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dataAval)) {
-      var p = dataAval.split('-');
-      dataFormatada = p[2] + '/' + p[1] + '/' + p[0];
-    } else {
-      dataFormatada = dataAval;
-    }
-  }
-
   var dataEmissao = new Date().toLocaleString('pt-BR');
+
+  // Helper para verificar chaves excluídas do relatório
+  function isExcludedKey(k) {
+    var keyUpper = String(k || '').trim().toUpperCase();
+    if (!keyUpper) return true;
+    if (keyUpper === 'ID' || keyUpper === 'ID_SISTEMA' || keyUpper === 'ID SISTEMA' || keyUpper === 'PROCESSED_SCRIPT' || keyUpper === 'ROW_INDEX') return true;
+    if (keyUpper.indexOf('MERGED DOC') !== -1) return true;
+    if (keyUpper.indexOf('DOCUMENT MERGE') !== -1) return true;
+    if (keyUpper.indexOf('LINK TO MERGED') !== -1) return true;
+    if (keyUpper.indexOf('ANÁLISE COMPORTAMENTO DIREÇÃO') !== -1 && (keyUpper.indexOf('URL') !== -1 || keyUpper.indexOf('ID') !== -1 || keyUpper.indexOf('LINK') !== -1 || keyUpper.indexOf('STATUS') !== -1)) return true;
+    if (keyUpper.indexOf('ANÁLISE COMPORTAMENTAL DO MOTORISTA') !== -1 && (keyUpper.indexOf('URL') !== -1 || keyUpper.indexOf('ID') !== -1 || keyUpper.indexOf('LINK') !== -1 || keyUpper.indexOf('STATUS') !== -1)) return true;
+    return false;
+  }
 
   var IMAGE_HEADERS = [
     'REGISTROS DE VERIFICAÇÃO DAS IMAGENS 1', 
@@ -1160,67 +1149,24 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
     'REGISTROS DE VERIFICAÇÃO DAS IMAGENS 4'
   ];
 
-  var imgBlocks = [];
-  IMAGE_HEADERS.forEach(function(hdr, index) {
-    var fileName = String(data[hdr] || '').trim();
-    if (fileName) {
-      var base64 = obterImagemBase64(fileName, memoryFiles, imageFolder);
-      if (base64) {
-        imgBlocks.push({
-          num: index + 1,
-          name: fileName,
-          base64: base64
-        });
-      }
-    }
-  });
+  var motorista = String(data['MOTORISTA'] || data['Motorista'] || 'MOTORISTA').trim().toUpperCase();
+  var avaliador = String(data['AVALIADOR'] || data['Avaliador'] || 'N/A').trim().toUpperCase();
 
-  var imagesHtml = '';
-  if (imgBlocks.length > 0) {
-    imagesHtml += '<div style="margin-top: 25px; page-break-inside: avoid;">' +
-      '<h3 style="font-family: Arial, sans-serif; font-size: 11px; font-weight: bold; color: #006633; text-transform: uppercase; border-left: 4px solid #006633; padding-left: 8px; margin-bottom: 12px; letter-spacing: 0.5px;">Evidências e Registros Fotográficos</h3>' +
-      '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="table-layout: fixed; width: 100%;">';
+  var initialInfoList = [];
+  var questionsList = [];
+  var outcomeList = [];
 
-    for (var i = 0; i < imgBlocks.length; i += 2) {
-      imagesHtml += '<tr>';
-      
-      var b1 = imgBlocks[i];
-      imagesHtml += '<td width="49%" valign="top" style="width: 49%;">' +
-        '<div style="margin-bottom: 12px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 6px; background: #ffffff; text-align: center; page-break-inside: avoid;">' +
-          '<div style="border-radius: 6px; overflow: hidden; background: #f8fafc; text-align: center; height: 180px; width: 100%;">' +
-            '<img src="' + b1.base64 + '" style="width: 100%; height: 180px; display: block; object-fit: cover; border: 0;" />' +
-          '</div>' +
-          '<div style="background: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 9px; font-weight: bold; color: #334155; text-align: center; margin-top: 6px;">Foto ' + b1.num + ': ' + b1.name + '</div>' +
-        '</div>' +
-      '</td>';
+  var initialKeys = ['MOTORISTA', 'AVALIADOR', 'TRANSPORTADORA', 'EMPRESA', 'FROTA', 'PLACA', 'VEICULO', 'VEÍCULO', 'BASE', 'UNIDADE', 'DATA', 'DATA AVALIAÇÃO', 'DATA AVALIACAO', 'HORA', 'HORÁRIO', 'LOCAL', 'TRECHO', 'LOCAL/TRECHO', 'LOCAL / TRECHO', 'LOCAL DA AVALIAÇÃO'];
 
-      if (i + 1 < imgBlocks.length) {
-        var b2 = imgBlocks[i+1];
-        imagesHtml += '<td width="2%" style="width: 2%;"></td>';
-        imagesHtml += '<td width="49%" valign="top" style="width: 49%;">' +
-          '<div style="margin-bottom: 12px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 6px; background: #ffffff; text-align: center; page-break-inside: avoid;">' +
-            '<div style="border-radius: 6px; overflow: hidden; background: #f8fafc; text-align: center; height: 180px; width: 100%;">' +
-              '<img src="' + b2.base64 + '" style="width: 100%; height: 180px; display: block; object-fit: cover; border: 0;" />' +
-            '</div>' +
-            '<div style="background: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 9px; font-weight: bold; color: #334155; text-align: center; margin-top: 6px;">Foto ' + b2.num + ': ' + b2.name + '</div>' +
-          '</div>' +
-        '</td>';
-      } else {
-        imagesHtml += '<td width="51%" style="width: 51%;"></td>';
-      }
-      imagesHtml += '</tr>';
-    }
-
-    imagesHtml += '</table></div>';
-  }
-
-  var tableRowsHtml = '';
-  var count = 0;
+  var pastLocalTrecho = false;
+  var questionCounter = 0;
 
   for (var k in data) {
     var keyClean = String(k).trim();
-    if (!keyClean || keyClean === 'PROCESSED_SCRIPT' || keyClean === 'ROW_INDEX') continue;
+    if (isExcludedKey(keyClean)) continue;
     if (IMAGE_HEADERS.includes(keyClean)) continue;
+
+    var keyUpper = keyClean.toUpperCase();
 
     var rawVal = data[k];
     var valStr = '';
@@ -1236,28 +1182,235 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
       valStr = String(rawVal ?? '').trim();
     }
 
-    var valUpper = valStr.toUpperCase();
-    var badgeHtml = valStr;
-
-    if (['SIM', 'NÃO', 'NAO', 'NA', 'N/A'].includes(valUpper)) {
-      if (valUpper === 'SIM') {
-        badgeHtml = '<span style="background-color: #DCFCE7; color: #15803D; border: 1px solid #86EFAC; padding: 3px 8px; border-radius: 12px; font-weight: bold; font-size: 9px; display: inline-block;">SIM</span>';
-      } else if (valUpper === 'NÃO' || valUpper === 'NAO') {
-        badgeHtml = '<span style="background-color: #FEE2E2; color: #B91C1C; border: 1px solid #FCA5A5; padding: 3px 8px; border-radius: 12px; font-weight: bold; font-size: 9px; display: inline-block;">NÃO</span>';
-      } else {
-        badgeHtml = '<span style="background-color: #E0F2FE; color: #0369A1; border: 1px solid #BAE6FD; padding: 3px 8px; border-radius: 12px; font-weight: bold; font-size: 9px; display: inline-block;">N/A</span>';
-      }
-    } else if (valStr) {
-      badgeHtml = '<span style="font-weight: bold; color: #0f172a;">' + valStr + '</span>';
+    if (keyUpper.includes('DATA') && /^\d{4}-\d{2}-\d{2}$/.test(valStr)) {
+      var p = valStr.split('-');
+      valStr = p[2] + '/' + p[1] + '/' + p[0];
     }
 
-    var rowBg = (count % 2 === 0) ? '#ffffff' : '#f8fafc';
-    tableRowsHtml += '<tr style="background-color: ' + rowBg + ';">' +
-      '<td style="padding: 6px 10px; border: 1px solid #e2e8f0; font-size: 9px; font-weight: bold; color: #334155; width: 65%;">' + keyClean + '</td>' +
-      '<td style="padding: 6px 10px; border: 1px solid #e2e8f0; font-size: 9px; text-align: center; width: 35%;">' + badgeHtml + '</td>' +
-    '</tr>';
-    count++;
+    if (!pastLocalTrecho) {
+      initialInfoList.push({ key: keyClean, value: valStr });
+      if (keyUpper.includes('LOCAL') || keyUpper.includes('TRECHO')) {
+        pastLocalTrecho = true;
+      }
+      continue;
+    }
+
+    if (questionCounter < 30) {
+      questionCounter++;
+      questionsList.push({ num: questionCounter, key: keyClean, value: valStr });
+    } else {
+      outcomeList.push({ key: keyClean, value: valStr });
+    }
   }
+
+  if (!pastLocalTrecho && initialInfoList.length > 0) {
+    var reCheckInitial = [];
+    var reCheckQuestions = [];
+    for (var i = 0; i < initialInfoList.length; i++) {
+      var item = initialInfoList[i];
+      var ku = item.key.toUpperCase();
+      if (initialKeys.some(function(ik) { return ku.indexOf(ik) !== -1; })) {
+        reCheckInitial.push(item);
+      } else {
+        reCheckQuestions.push(item);
+      }
+    }
+    initialInfoList = reCheckInitial;
+    for (var j = 0; j < reCheckQuestions.length; j++) {
+      if (questionCounter < 30) {
+        questionCounter++;
+        questionsList.push({ num: questionCounter, key: reCheckQuestions[j].key, value: reCheckQuestions[j].value });
+      } else {
+        outcomeList.push(reCheckQuestions[j]);
+      }
+    }
+  }
+
+  // 1. CARDS DE INFORMAÇÕES INICIAIS (até LOCAL/TRECHO)
+  var initialCardsHtml = '';
+  if (initialInfoList.length > 0) {
+    initialCardsHtml += '<div style="margin-bottom: 16px;">' +
+      '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="table-layout: fixed; width: 100%;">';
+
+    for (var a = 0; a < initialInfoList.length; a += 3) {
+      initialCardsHtml += '<tr>';
+      for (var col = 0; col < 3; col++) {
+        var idx = a + col;
+        if (idx < initialInfoList.length) {
+          var itemCard = initialInfoList[idx];
+          var icon = '📌';
+          var kUpper = itemCard.key.toUpperCase();
+          if (kUpper.includes('MOTORISTA')) icon = '👤';
+          else if (kUpper.includes('AVALIADOR')) icon = '📋';
+          else if (kUpper.includes('FROTA') || kUpper.includes('VEICULO') || kUpper.includes('PLACA')) icon = '🚛';
+          else if (kUpper.includes('BASE') || kUpper.includes('UNIDADE')) icon = '📍';
+          else if (kUpper.includes('DATA') || kUpper.includes('HORA')) icon = '📅';
+          else if (kUpper.includes('LOCAL') || kUpper.includes('TRECHO')) icon = '🗺️';
+          else if (kUpper.includes('TRANSPORTADORA') || kUpper.includes('EMPRESA')) icon = '🏢';
+
+          initialCardsHtml += '<td width="32%" valign="top" style="width: 32%; padding-bottom: 8px;">' +
+            '<div style="background-color: #f8fafc; border: 1.5px solid #006633; border-radius: 8px; padding: 8px 10px; height: 48px; box-sizing: border-box;">' +
+              '<span style="font-size: 8px; color: #006633; font-weight: bold; text-transform: uppercase;">' + icon + ' ' + itemCard.key + '</span>' +
+              '<div style="font-size: 11px; font-weight: 800; color: #0f172a; margin-top: 2px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">' + (itemCard.value || 'N/D') + '</div>' +
+            '</div>' +
+          '</td>';
+        } else {
+          initialCardsHtml += '<td width="32%"></td>';
+        }
+
+        if (col < 2) {
+          initialCardsHtml += '<td width="2%"></td>';
+        }
+      }
+      initialCardsHtml += '</tr>';
+    }
+
+    initialCardsHtml += '</table></div>';
+  }
+
+  // 2. TABELA DE PERGUNTAS E RESPOSTAS (PERGUNTAS 1 A 30)
+  var tableRowsHtml = '';
+
+  for (var q = 0; q < questionsList.length; q++) {
+    var qObj = questionsList[q];
+    var qNum = qObj.num;
+    var qKey = qObj.key;
+    var valStr = qObj.value;
+
+    if (qNum === 1) {
+      tableRowsHtml += '<tr>' +
+        '<td colspan="2" style="padding: 10px 0 6px 0; border: none; background: transparent;">' +
+          '<div style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff; font-family: Arial, sans-serif; font-size: 10px; font-weight: 800; text-transform: uppercase; padding: 7px 12px; border-radius: 6px; letter-spacing: 0.5px;">' +
+            'ANTES DO INÍCIO DA VIAGEM' +
+          '</div>' +
+        '</td>' +
+      '</tr>';
+    } else if (qNum === 3) {
+      tableRowsHtml += '<tr>' +
+        '<td colspan="2" style="padding: 10px 0 6px 0; border: none; background: transparent;">' +
+          '<div style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff; font-family: Arial, sans-serif; font-size: 10px; font-weight: 800; text-transform: uppercase; padding: 7px 12px; border-radius: 6px; letter-spacing: 0.5px;">' +
+            'PROCEDIMENTOS DA EMPRESA RISEL COMBUSTÍVEIS' +
+          '</div>' +
+        '</td>' +
+      '</tr>';
+    } else if (qNum === 13) {
+      tableRowsHtml += '<tr>' +
+        '<td colspan="2" style="padding: 10px 0 6px 0; border: none; background: transparent;">' +
+          '<div style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff; font-family: Arial, sans-serif; font-size: 10px; font-weight: 800; text-transform: uppercase; padding: 7px 12px; border-radius: 6px; letter-spacing: 0.5px;">' +
+            'PROCEDIMENTOS DA DIREÇÃO SEGURA' +
+          '</div>' +
+        '</td>' +
+      '</tr>';
+    }
+
+    var valUpper = valStr.toUpperCase();
+    var cellGradientStyle = '';
+
+    if (valUpper === 'SIM') {
+      cellGradientStyle = 'background: linear-gradient(135deg, #16a34a 0%, #15803d 100%); color: #ffffff; font-weight: 900; font-size: 10px; padding: 5px 2px; border-radius: 4px; text-transform: uppercase; text-align: center; width: 100%; box-sizing: border-box;';
+    } else if (valUpper === 'NÃO' || valUpper === 'NAO') {
+      cellGradientStyle = 'background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); color: #ffffff; font-weight: 900; font-size: 10px; padding: 5px 2px; border-radius: 4px; text-transform: uppercase; text-align: center; width: 100%; box-sizing: border-box;';
+    } else if (valUpper === 'NA' || valUpper === 'N/A') {
+      cellGradientStyle = 'background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: #ffffff; font-weight: 900; font-size: 10px; padding: 5px 2px; border-radius: 4px; text-transform: uppercase; text-align: center; width: 100%; box-sizing: border-box;';
+    } else {
+      cellGradientStyle = 'background: #f1f5f9; color: #0f172a; font-weight: 700; font-size: 9px; padding: 5px 2px; border-radius: 4px; text-align: center; width: 100%; box-sizing: border-box;';
+    }
+
+    var badgeHtml = '<div style="' + cellGradientStyle + '">' + (valStr || '-') + '</div>';
+
+    var rowBg = (q % 2 === 0) ? '#ffffff' : '#f8fafc';
+    tableRowsHtml += '<tr style="background-color: ' + rowBg + ';">' +
+      '<td style="padding: 5px 8px; border: 1px solid #e2e8f0; font-size: 9px; font-weight: bold; color: #334155; width: 78%;">' + qKey + '</td>' +
+      '<td style="padding: 3px; border: 1px solid #e2e8f0; font-size: 9px; text-align: center; width: 22%; vertical-align: middle;">' + badgeHtml + '</td>' +
+    '</tr>';
+  }
+
+  // 3. CAMPOS DE DESFECHO (APÓS A PERGUNTA 30)
+  var outcomeCardsHtml = '';
+  if (outcomeList.length > 0) {
+    outcomeCardsHtml += '<div style="margin-top: 20px; margin-bottom: 18px; page-break-inside: avoid;">' +
+      '<div style="font-family: Arial, sans-serif; font-size: 11px; font-weight: bold; color: #006633; text-transform: uppercase; border-left: 4px solid #006633; padding-left: 8px; margin-bottom: 10px; letter-spacing: 0.5px;">' +
+        'Desfecho e Conclusão da Avaliação' +
+      '</div>';
+
+    for (var o = 0; o < outcomeList.length; o++) {
+      var oItem = outcomeList[o];
+      outcomeCardsHtml += '<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #006633; border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; page-break-inside: avoid;">' +
+        '<div style="font-size: 9px; font-weight: 800; color: #006633; text-transform: uppercase; letter-spacing: 0.5px;">' + oItem.key + '</div>' +
+        '<div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-top: 3px; line-height: 1.4;">' + (oItem.value || 'N/A') + '</div>' +
+      '</div>';
+    }
+
+    outcomeCardsHtml += '</div>';
+  }
+
+  // 4. IMAGENS (APÓS PERGUNTA 30 / DESFECHO, SEM LEGENDA ABAIXO DAS FOTOS)
+  var imgBlocks = [];
+  IMAGE_HEADERS.forEach(function(hdr) {
+    var fileName = String(data[hdr] || '').trim();
+    if (fileName) {
+      var base64 = obterImagemBase64(fileName, memoryFiles, imageFolder);
+      if (base64) {
+        imgBlocks.push({ base64: base64 });
+      }
+    }
+  });
+
+  var imagesHtml = '';
+  if (imgBlocks.length > 0) {
+    imagesHtml += '<div style="margin-top: 20px; margin-bottom: 20px; page-break-inside: avoid;">' +
+      '<div style="font-family: Arial, sans-serif; font-size: 11px; font-weight: bold; color: #006633; text-transform: uppercase; border-left: 4px solid #006633; padding-left: 8px; margin-bottom: 10px; letter-spacing: 0.5px;">Evidências e Registros Fotográficos</div>' +
+      '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="table-layout: fixed; width: 100%;">';
+
+    for (var i = 0; i < imgBlocks.length; i += 2) {
+      imagesHtml += '<tr>';
+      
+      var b1 = imgBlocks[i];
+      imagesHtml += '<td width="49%" valign="top" style="width: 49%;">' +
+        '<div style="margin-bottom: 10px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 4px; background: #ffffff; text-align: center; page-break-inside: avoid;">' +
+          '<div style="border-radius: 6px; overflow: hidden; background: #f8fafc; text-align: center; height: 180px; width: 100%;">' +
+            '<img src="' + b1.base64 + '" style="width: 100%; height: 180px; display: block; object-fit: cover; border: 0;" />' +
+          '</div>' +
+        '</div>' +
+      '</td>';
+
+      if (i + 1 < imgBlocks.length) {
+        var b2 = imgBlocks[i+1];
+        imagesHtml += '<td width="2%" style="width: 2%;"></td>';
+        imagesHtml += '<td width="49%" valign="top" style="width: 49%;">' +
+          '<div style="margin-bottom: 10px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 4px; background: #ffffff; text-align: center; page-break-inside: avoid;">' +
+            '<div style="border-radius: 6px; overflow: hidden; background: #f8fafc; text-align: center; height: 180px; width: 100%;">' +
+              '<img src="' + b2.base64 + '" style="width: 100%; height: 180px; display: block; object-fit: cover; border: 0;" />' +
+            '</div>' +
+          '</div>' +
+        '</td>';
+      } else {
+        imagesHtml += '<td width="51%" style="width: 51%;"></td>';
+      }
+      imagesHtml += '</tr>';
+    }
+
+    imagesHtml += '</table></div>';
+  }
+
+  // 5. LOCAL DE ASSINATURA AO FINAL DO RELATÓRIO
+  var signaturesHtml = '<div style="margin-top: 35px; margin-bottom: 15px; page-break-inside: avoid;">' +
+    '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="table-layout: fixed; width: 100%;">' +
+      '<tr>' +
+        '<td width="46%" align="center" valign="bottom">' +
+          '<div style="border-top: 1.5px solid #334155; width: 90%; margin: 0 auto 6px auto;"></div>' +
+          '<div style="font-size: 10px; font-weight: 900; color: #0f172a; text-transform: uppercase;">' + motorista + '</div>' +
+          '<div style="font-size: 8px; font-weight: bold; color: #64748b; text-transform: uppercase; margin-top: 2px;">Motorista Avaliado</div>' +
+        '</td>' +
+        '<td width="8%"></td>' +
+        '<td width="46%" align="center" valign="bottom">' +
+          '<div style="border-top: 1.5px solid #334155; width: 90%; margin: 0 auto 6px auto;"></div>' +
+          '<div style="font-size: 10px; font-weight: 900; color: #0f172a; text-transform: uppercase;">' + avaliador + '</div>' +
+          '<div style="font-size: 8px; font-weight: bold; color: #64748b; text-transform: uppercase; margin-top: 2px;">Avaliador / Supervisor</div>' +
+        '</td>' +
+      '</tr>' +
+    '</table>' +
+  '</div>';
 
   var htmlContent = '<!DOCTYPE html>' +
     '<html>' +
@@ -1265,18 +1418,18 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
       '<meta charset="utf-8">' +
       '<title>Relatório de Avaliação de Direção</title>' +
       '<style>' +
-        '@page { size: A4; margin: 12mm 10mm 12mm 10mm; }' +
+        '@page { size: A4; margin: 10mm 10mm 10mm 10mm; }' +
         'body { font-family: Arial, sans-serif; color: #0f172a; background: #ffffff; margin: 0; padding: 0; }' +
       '</style>' +
     '</head>' +
     '<body>' +
-      '<div style="height: 5px; background: linear-gradient(90deg, #006633 0%, #F99D1C 100%); margin-bottom: 12px; border-radius: 3px;"></div>' +
+      '<div style="height: 5px; background: linear-gradient(90deg, #006633 0%, #F99D1C 100%); margin-bottom: 10px; border-radius: 3px;"></div>' +
 
-      '<div style="border-bottom: 2px solid #006633; padding-bottom: 10px; margin-bottom: 16px;">' +
+      '<div style="border-bottom: 2px solid #006633; padding-bottom: 8px; margin-bottom: 14px;">' +
         '<table width="100%" border="0" cellspacing="0" cellpadding="0">' +
           '<tr>' +
             '<td width="65%" valign="middle" align="left">' +
-              '<h1 style="margin: 0; font-family: Arial, sans-serif; font-size: 16px; font-weight: 900; color: #006633; letter-spacing: -0.3px; text-transform: uppercase;">RISEL COMBUSTÍVEIS</h1>' +
+              '<h1 style="margin: 0; font-family: Arial, sans-serif; font-size: 15px; font-weight: 900; color: #006633; letter-spacing: -0.3px; text-transform: uppercase;">RISEL COMBUSTÍVEIS</h1>' +
               '<p style="margin: 2px 0 0 0; font-family: Arial, sans-serif; font-size: 9px; font-weight: bold; color: #F99D1C; text-transform: uppercase;">SISTEMA DE MONITORAMENTO E AVALIAÇÃO DE DIREÇÃO</p>' +
             '</td>' +
             '<td width="35%" align="right" valign="middle" style="font-family: monospace; font-size: 8px; color: #64748b; text-align: right;">' +
@@ -1287,62 +1440,17 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
         '</table>' +
       '</div>' +
 
-      '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom: 16px; table-layout: fixed; width: 100%;">' +
-        '<tr>' +
-          '<td width="49%" valign="top">' +
-            '<div style="background-color: #f8fafc; border: 1.5px solid #006633; border-radius: 10px; padding: 10px; height: 52px;">' +
-              '<span style="font-size: 8px; color: #006633; font-weight: bold; text-transform: uppercase;">👤 Motorista</span>' +
-              '<div style="font-size: 12px; font-weight: 800; color: #0f172a; margin-top: 4px; text-transform: uppercase;">' + motorista + '</div>' +
-            '</div>' +
-          '</td>' +
-          '<td width="2%"></td>' +
-          '<td width="49%" valign="top">' +
-            '<div style="background-color: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px; height: 52px;">' +
-              '<span style="font-size: 8px; color: #475569; font-weight: bold; text-transform: uppercase;">📋 Avaliador</span>' +
-              '<div style="font-size: 12px; font-weight: 800; color: #0f172a; margin-top: 4px; text-transform: uppercase;">' + avaliador + '</div>' +
-            '</div>' +
-          '</td>' +
-        '</tr>' +
-        '<tr style="height: 8px;"><td colspan="3"></td></tr>' +
-        '<tr>' +
-          '<td width="49%" valign="top">' +
-            '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="table-layout: fixed; width: 100%;">' +
-              '<tr>' +
-                '<td width="48%" valign="top">' +
-                  '<div style="background-color: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px; height: 52px; text-align: center;">' +
-                    '<span style="font-size: 8px; color: #475569; font-weight: bold; text-transform: uppercase;">🚛 Frota</span>' +
-                    '<div style="font-size: 12px; font-weight: 800; color: #0f172a; margin-top: 4px;">' + frota + '</div>' +
-                  '</div>' +
-                '</td>' +
-                '<td width="4%"></td>' +
-                '<td width="48%" valign="top">' +
-                  '<div style="background-color: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px; height: 52px; text-align: center;">' +
-                    '<span style="font-size: 8px; color: #475569; font-weight: bold; text-transform: uppercase;">📅 Data</span>' +
-                    '<div style="font-size: 12px; font-weight: 800; color: #0f172a; margin-top: 4px;">' + dataFormatada + '</div>' +
-                  '</div>' +
-                '</td>' +
-              '</tr>' +
-            '</table>' +
-          '</td>' +
-          '<td width="2%"></td>' +
-          '<td width="49%" valign="top">' +
-            '<div style="background-color: #f0fdf4; border: 1.5px solid #16a34a; border-radius: 10px; padding: 10px; height: 52px; text-align: center;">' +
-              '<span style="font-size: 8px; color: #15803d; font-weight: bold; text-transform: uppercase;">🏆 Resultado Geral</span>' +
-              '<div style="font-size: 15px; font-weight: 900; color: #16a34a; margin-top: 3px;">' + resultado + '</div>' +
-            '</div>' +
-          '</td>' +
-        '</tr>' +
-      '</table>' +
+      initialCardsHtml +
 
-      '<div style="font-family: Arial, sans-serif; font-size: 11px; font-weight: bold; color: #006633; text-transform: uppercase; border-left: 4px solid #006633; padding-left: 8px; margin-top: 15px; margin-bottom: 10px; letter-spacing: 0.5px;">' +
+      '<div style="font-family: Arial, sans-serif; font-size: 11px; font-weight: bold; color: #006633; text-transform: uppercase; border-left: 4px solid #006633; padding-left: 8px; margin-top: 10px; margin-bottom: 10px; letter-spacing: 0.5px;">' +
         'Detalhamento dos Itens Avaliados' +
       '</div>' +
 
-      '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; margin-bottom: 18px; border: 1px solid #cbd5e1;">' +
+      '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; margin-bottom: 14px; border: 1px solid #cbd5e1;">' +
         '<thead>' +
           '<tr style="background-color: #006633; color: #ffffff;">' +
-            '<th style="padding: 8px 10px; text-align: left; font-size: 10px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 65%;">Item de Avaliação</th>' +
-            '<th style="padding: 8px 10px; text-align: center; font-size: 10px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 35%;">Resultado / Resposta</th>' +
+            '<th style="padding: 7px 10px; text-align: left; font-size: 9px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 78%;">Item de Avaliação</th>' +
+            '<th style="padding: 7px 10px; text-align: center; font-size: 9px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 22%;">Resultado / Resposta</th>' +
           '</tr>' +
         '</thead>' +
         '<tbody>' +
@@ -1350,11 +1458,11 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
         '</tbody>' +
       '</table>' +
 
+      outcomeCardsHtml +
+
       imagesHtml +
 
-      '<div style="margin-top: 25px; padding-top: 10px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 8px; color: #94a3b8; font-family: sans-serif;">' +
-        'Relatório emitido automaticamente pelo Sistema de Monitoramento Risel Combustíveis.' +
-      '</div>' +
+      signaturesHtml +
     '</body>' +
     '</html>';
 
