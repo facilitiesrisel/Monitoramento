@@ -1077,23 +1077,22 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
   function isExcludedKey(k) {
     var keyUpper = String(k || '').trim().toUpperCase();
     if (!keyUpper) return true;
+
+    // CRÍTICO: Se a chave começar com número (ex: "1)", "30)", "30.", "30 -"), NÃO deve ser excluída
+    var isNumbered = /^(\d+)[\)\.\-\s]/.test(keyUpper);
+    if (isNumbered) return false;
+
     if (keyUpper === 'ID' || keyUpper === 'ID_SISTEMA' || keyUpper === 'ID SISTEMA' || keyUpper === 'PROCESSED_SCRIPT' || keyUpper === 'ROW_INDEX') return true;
     if (keyUpper.indexOf('MERGED DOC') !== -1) return true;
     if (keyUpper.indexOf('DOCUMENT MERGE') !== -1) return true;
     if (keyUpper.indexOf('LINK TO MERGED') !== -1) return true;
-    if (keyUpper.indexOf('ANÁLISE COMPORTAMENTO DIREÇÃO') !== -1) return true;
-    if (keyUpper.indexOf('ANÁLISE COMPORTAMENTAL DO MOTORISTA') !== -1) return true;
-    
-    // Se a chave começar com número (ex: "1)", "28)", "4."), NÃO deve ser excluída pelas regras de texto
-    var isNumbered = /^(\d+)[\)\.\-\s]/.test(keyUpper);
-    if (isNumbered) return false;
 
-    // Excluir metadados e resumos finais do loop de perguntas para evitar duplicatas nas perguntas
+    // Excluir metadados e resumos finais do loop de perguntas para evitar duplicatas
     var excludeList = [
       'MOTORISTA', 'AVALIADOR', 'TRANSPORTADORA', 'EMPRESA', 'FROTA', 'PLACA', 'VEICULO', 'VEÍCULO',
       'BASE', 'UNIDADE', 'DATA', 'DATA AVALIAÇÃO', 'DATA AVALIACAO', 'HORA', 'HORÁRIO', 'LOCAL', 'TRECHO',
       'LOCAL/TRECHO', 'LOCAL / TRECHO', 'LOCAL DA AVALIAÇÃO',
-      'PLANO DE AÇÃO', 'PLANO DE ACAO', 'PRAZO', 'STATUS', 'RESPONSÁVEL', 'RESPONSAVEL', 'LUCAS DANIEL',
+      'PLANO DE AÇÃO', 'PLANO DE ACAO', 'PRAZO', 'STATUS', 'RESPONSÁVEL PELA FROTA', 'RESPONSAVEL PELA FROTA', 'RESPONSÁVEL', 'RESPONSAVEL',
       'RESULTADO GERAL DO ACOMPANHAMENTO', 'RESULTADO GERAL', 'RESULTADO (%)', 'RESULTADO',
       'PONTOS POR HORA', 'PONTUAÇÃO', 'PONTUACAO', 'PONTOS',
       'NOME SUPERVISOR', 'SUPERVISOR', 'GESTOR', 'NOME DO GESTOR', 'FUNÇÃO', 'FUNCAO', 
@@ -1102,7 +1101,7 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
     ];
 
     for (var i = 0; i < excludeList.length; i++) {
-      if (keyUpper === excludeList[i] || keyUpper.indexOf(excludeList[i]) !== -1) return true;
+      if (keyUpper === excludeList[i]) return true;
     }
 
     return false;
@@ -1148,8 +1147,8 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
     data['OBSERVAÇÕES'] || data['Observações'] || data['OBSERVAÇÃO'] || data['Observação'] || data['COMENATÁRIOS'] || 'Nenhum comentário registrado.'
   ).trim();
 
-  var gestorNome = String(data['NOME SUPERVISOR'] || data['SUPERVISOR'] || data['GESTOR'] || data['NOME DO GESTOR'] || avaliador).trim().toUpperCase();
-  var gestorFuncao = String(data['FUNÇÃO'] || data['FUNCAO'] || 'SUPERVISOR DE OPERAÇÕES').trim().toUpperCase();
+  // Nome do Gestor pegando primeiramente do Responsável pela Frota da avaliação
+  var gestorNome = String(data['RESPONSÁVEL PELA FROTA'] || data['RESPONSAVEL PELA FROTA'] || data['RESPONSÁVEL'] || data['RESPONSAVEL'] || data['NOME SUPERVISOR'] || data['SUPERVISOR'] || data['GESTOR'] || data['NOME DO GESTOR'] || avaliador).trim().toUpperCase();
 
   // Coleta e ordenação de todas as 30 perguntas
   var initialKeys = ['MOTORISTA', 'AVALIADOR', 'TRANSPORTADORA', 'EMPRESA', 'FROTA', 'PLACA', 'VEICULO', 'VEÍCULO', 'BASE', 'UNIDADE', 'DATA', 'DATA AVALIAÇÃO', 'DATA AVALIACAO', 'HORA', 'HORÁRIO', 'LOCAL', 'TRECHO', 'LOCAL/TRECHO', 'LOCAL / TRECHO', 'LOCAL DA AVALIAÇÃO'];
@@ -1181,7 +1180,7 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
   // Ordena as perguntas pelo número (1 a 30) para garantir integridade sequencial
   questionsList.sort(function(a, b) { return a.num - b.num; });
 
-  // Montagem do HTML de perguntas com cabeçalhos gradientes verdes atualizados
+  // Montagem do HTML de perguntas com cabeçalhos gradientes verdes preenchendo 100% a linha da tabela
   var tableRowsHtml = '';
   for (var q = 0; q < questionsList.length; q++) {
     var qObj = questionsList[q];
@@ -1189,51 +1188,80 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
 
     // Seção 1 (Pergunta 1 e 2): ANTES DO INÍCIO DA VIAGEM
     if (qNum === 1) {
-      tableRowsHtml += '<tr><td colspan="2" style="padding: 10px 0 6px 0; border: none; background: transparent;"><div style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11px; font-weight: 800; text-transform: uppercase; padding: 7px 12px; border-radius: 6px; letter-spacing: 0.5px;">ANTES DO INÍCIO DA VIAGEM</div></td></tr>';
+      tableRowsHtml += '<tr style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff;"><td colspan="2" style="padding: 8px 12px; border: 1px solid #004d26; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11.5px; font-weight: 800; text-transform: uppercase; color: #ffffff; letter-spacing: 0.5px;">ANTES DO INÍCIO DA VIAGEM</td></tr>';
     } 
-    // Seção 2 (Pergunta 3 até 28): PROCEDIMENTOS DA EMPRESA (sem divisoria no item 13)
+    // Seção 2 (Pergunta 3 até 28): PROCEDIMENTOS DA EMPRESA
     else if (qNum === 3) {
-      tableRowsHtml += '<tr><td colspan="2" style="padding: 10px 0 6px 0; border: none; background: transparent;"><div style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11px; font-weight: 800; text-transform: uppercase; padding: 7px 12px; border-radius: 6px; letter-spacing: 0.5px;">PROCEDIMENTOS DA EMPRESA</div></td></tr>';
+      tableRowsHtml += '<tr style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff;"><td colspan="2" style="padding: 8px 12px; border: 1px solid #004d26; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11.5px; font-weight: 800; text-transform: uppercase; color: #ffffff; letter-spacing: 0.5px;">PROCEDIMENTOS DA EMPRESA</td></tr>';
     } 
     // Seção 3 (Pergunta 29 e 30): UTILIZAÇÃO DAS CÂMERAS EMBARCADAS
     else if (qNum === 29) {
-      tableRowsHtml += '<tr><td colspan="2" style="padding: 10px 0 6px 0; border: none; background: transparent;"><div style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11px; font-weight: 800; text-transform: uppercase; padding: 7px 12px; border-radius: 6px; letter-spacing: 0.5px;">UTILIZAÇÃO DAS CÂMERAS EMBARCADAS</div></td></tr>';
+      tableRowsHtml += '<tr style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff;"><td colspan="2" style="padding: 8px 12px; border: 1px solid #004d26; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11.5px; font-weight: 800; text-transform: uppercase; color: #ffffff; letter-spacing: 0.5px;">UTILIZAÇÃO DAS CÂMERAS EMBARCADAS</td></tr>';
     }
 
     var valUpper = qObj.value.toUpperCase();
-    var badgeStyle = 'background: #f1f5f9; color: #0f172a; font-weight: 700; font-size: 10.5px; padding: 5px 3px; border-radius: 4px; text-align: center; width: 100%; box-sizing: border-box;';
+    var badgeStyle = 'background: #64748b; color: #ffffff; font-weight: 900; font-size: 11px; padding: 6px 4px; border-radius: 6px; text-transform: uppercase; text-align: center; width: 100%; box-sizing: border-box;';
 
     if (valUpper === 'SIM') {
-      badgeStyle = 'background: linear-gradient(135deg, #16a34a 0%, #15803d 100%); color: #ffffff; font-weight: 900; font-size: 10.5px; padding: 5px 3px; border-radius: 4px; text-transform: uppercase; text-align: center; width: 100%; box-sizing: border-box;';
+      badgeStyle = 'background: #10b981; color: #ffffff; font-weight: 900; font-size: 11px; padding: 6px 4px; border-radius: 6px; text-transform: uppercase; text-align: center; width: 100%; box-sizing: border-box;';
     } else if (valUpper === 'NÃO' || valUpper === 'NAO') {
-      badgeStyle = 'background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); color: #ffffff; font-weight: 900; font-size: 10.5px; padding: 5px 3px; border-radius: 4px; text-transform: uppercase; text-align: center; width: 100%; box-sizing: border-box;';
+      badgeStyle = 'background: #ef4444; color: #ffffff; font-weight: 900; font-size: 11px; padding: 6px 4px; border-radius: 6px; text-transform: uppercase; text-align: center; width: 100%; box-sizing: border-box;';
     } else if (valUpper === 'NA' || valUpper === 'N/A') {
-      badgeStyle = 'background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: #ffffff; font-weight: 900; font-size: 10.5px; padding: 5px 3px; border-radius: 4px; text-transform: uppercase; text-align: center; width: 100%; box-sizing: border-box;';
+      badgeStyle = 'background: #3b82f6; color: #ffffff; font-weight: 900; font-size: 11px; padding: 6px 4px; border-radius: 6px; text-transform: uppercase; text-align: center; width: 100%; box-sizing: border-box;';
     }
 
     var badgeHtml = '<div style="' + badgeStyle + '">' + (qObj.value || '-') + '</div>';
     var rowBg = (q % 2 === 0) ? '#ffffff' : '#f8fafc';
 
     tableRowsHtml += '<tr style="background-color: ' + rowBg + ';">' +
-      '<td style="padding: 6px 10px; border: 1px solid #e2e8f0; font-size: 10.5px; font-weight: bold; color: #1e293b; width: 78%; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif;">' + qObj.key + '</td>' +
-      '<td style="padding: 3px; border: 1px solid #e2e8f0; font-size: 10.5px; text-align: center; width: 22%; vertical-align: middle;">' + badgeHtml + '</td>' +
+      '<td style="padding: 7px 10px; border: 1px solid #cbd5e1; font-size: 11.5px; font-weight: bold; color: #1e293b; width: 78%; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif;">' + qObj.key + '</td>' +
+      '<td style="padding: 4px; border: 1px solid #cbd5e1; font-size: 11px; text-align: center; width: 22%; vertical-align: middle;">' + badgeHtml + '</td>' +
     '</tr>';
   }
 
-  // Processamento das Imagens
+  // Processamento das Imagens Anexas
   var imgBlocks = [];
+  var seenFiles = {};
+
   IMAGE_HEADERS.forEach(function(hdr) {
     var fileName = String(data[hdr] || '').trim();
-    if (fileName) {
+    if (fileName && !seenFiles[fileName]) {
+      seenFiles[fileName] = true;
       var base64 = obterImagemBase64(fileName, memoryFiles, imageFolder);
-      if (base64) imgBlocks.push({ base64: base64 });
+      if (base64) imgBlocks.push({ name: fileName, base64: base64 });
     }
   });
+
+  for (var kIn in data) {
+    var kInUpper = String(kIn).toUpperCase();
+    if (kInUpper.indexOf('IMAGEM') !== -1 || kInUpper.indexOf('REGISTROS DE VERIFICAÇÃO') !== -1 || kInUpper.indexOf('FOTO') !== -1) {
+      var valIn = String(data[kIn] || '').trim();
+      if (valIn && !seenFiles[valIn]) {
+        seenFiles[valIn] = true;
+        if (valIn.indexOf('data:image/') === 0) {
+          imgBlocks.push({ name: kIn, base64: valIn });
+        } else {
+          var b64 = obterImagemBase64(valIn, memoryFiles, imageFolder);
+          if (b64) imgBlocks.push({ name: valIn, base64: b64 });
+        }
+      }
+    }
+  }
+
+  if (memoryFiles) {
+    for (var mfKey in memoryFiles) {
+      if (!seenFiles[mfKey]) {
+        seenFiles[mfKey] = true;
+        var b64Mf = obterImagemBase64(mfKey, memoryFiles, imageFolder);
+        if (b64Mf) imgBlocks.push({ name: mfKey, base64: b64Mf });
+      }
+    }
+  }
 
   var imagesHtml = '';
   if (imgBlocks.length > 0) {
     imagesHtml += '<div style="margin-top: 18px; margin-bottom: 16px; page-break-inside: avoid;">' +
-      '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11px; font-weight: bold; color: #006633; text-transform: uppercase; border-left: 4px solid #006633; padding-left: 8px; margin-bottom: 10px; letter-spacing: 0.5px;">EVIDÊNCIAS E REGISTROS FOTOGRÁFICOS</div>' +
+      '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11.5px; font-weight: 800; color: #006633; text-transform: uppercase; border-left: 4px solid #006633; padding-left: 8px; margin-bottom: 10px; letter-spacing: 0.5px;">REGISTROS DE VERIFICAÇÃO DAS IMAGENS</div>' +
       '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="table-layout: fixed; width: 100%;">';
 
     for (var i = 0; i < imgBlocks.length; i += 2) {
@@ -1286,11 +1314,11 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
 
   // 2. Card de OBSERVAÇÕES
   var observacoesHtml = '<div style="margin-bottom: 16px; page-break-inside: avoid;">' +
-    '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11px; font-weight: bold; color: #006633; text-transform: uppercase; border-left: 4px solid #006633; padding-left: 8px; margin-bottom: 6px; letter-spacing: 0.5px;">OBSERVAÇÕES</div>' +
-    '<div style="background: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #006633; border-radius: 6px; padding: 10px 12px; font-size: 11px; color: #0f172a; line-height: 1.4; min-height: 32px; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif;">' + observacaoVal + '</div>' +
+    '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11.5px; font-weight: bold; color: #006633; text-transform: uppercase; border-left: 4px solid #006633; padding-left: 8px; margin-bottom: 6px; letter-spacing: 0.5px;">OBSERVAÇÕES</div>' +
+    '<div style="background: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #006633; border-radius: 6px; padding: 10px 12px; font-size: 11.5px; color: #0f172a; line-height: 1.4; min-height: 32px; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif;">' + observacaoVal + '</div>' +
   '</div>';
 
-  // 3. Quadros/Cards de PONTOS POR HORA e RESULTADO GERAL (Sem cabeçalho de tabela, altura ampliada para destaque)
+  // 3. Quadros/Cards de PONTOS POR HORA e RESULTADO GERAL
   var pontosResultadoHtml = '<div style="margin-top: 18px; margin-bottom: 16px; page-break-inside: avoid;">' +
     '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="table-layout: fixed; width: 100%;">' +
       '<tr>' +
@@ -1311,9 +1339,9 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
     '</table>' +
   '</div>';
 
-  // 4. CONVERSA DE FEEDBACK (Com nome do Gestor direto preenchido)
+  // 4. CONVERSA DE FEEDBACK (Data em branco, Nome do Gestor preenchido com Responsável pela Frota, Função em branco)
   var conversaFeedbackHtml = '<div style="margin-bottom: 16px; page-break-inside: avoid;">' +
-    '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11px; font-weight: bold; color: #006633; text-transform: uppercase; border-left: 4px solid #006633; padding-left: 8px; margin-bottom: 6px; letter-spacing: 0.5px;">CONVERSA DE FEEDBACK</div>' +
+    '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11.5px; font-weight: bold; color: #006633; text-transform: uppercase; border-left: 4px solid #006633; padding-left: 8px; margin-bottom: 6px; letter-spacing: 0.5px;">CONVERSA DE FEEDBACK</div>' +
     '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%; border: 1px solid #cbd5e1;">' +
       '<thead>' +
         '<tr style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff;">' +
@@ -1325,9 +1353,9 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
       '</thead>' +
       '<tbody>' +
         '<tr style="height: 38px; background-color: #ffffff;">' +
-          '<td style="border: 1px solid #cbd5e1; padding: 6px; font-size: 10.5px; text-align: center; vertical-align: middle; font-family: \'Aptos Narrow\', sans-serif;">' + dataAval + '</td>' +
+          '<td style="border: 1px solid #cbd5e1; padding: 6px; font-size: 10.5px; text-align: center; vertical-align: middle; font-family: \'Aptos Narrow\', sans-serif;">&nbsp;</td>' +
           '<td style="border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10.5px; font-weight: 800; color: #0f172a; text-transform: uppercase; vertical-align: middle; font-family: \'Aptos Narrow\', sans-serif;">' + gestorNome + '</td>' +
-          '<td style="border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10px; font-weight: 700; color: #334155; text-transform: uppercase; vertical-align: middle; font-family: \'Aptos Narrow\', sans-serif;">' + gestorFuncao + '</td>' +
+          '<td style="border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10.5px; font-weight: 700; color: #334155; text-transform: uppercase; vertical-align: middle; font-family: \'Aptos Narrow\', sans-serif;">&nbsp;</td>' +
           '<td style="border: 1px solid #cbd5e1; padding: 4px; vertical-align: middle;">&nbsp;</td>' +
         '</tr>' +
       '</tbody>' +
@@ -1336,7 +1364,7 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
 
   // 5. DECLARAÇÃO DO MOTORISTA
   var declaracaoMotoristaHtml = '<div style="margin-bottom: 16px; page-break-inside: avoid;">' +
-    '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11px; font-weight: bold; color: #334155; margin-bottom: 6px;">Declaro que recebi todas as informações acima:</div>' +
+    '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11.5px; font-weight: bold; color: #334155; margin-bottom: 6px;">Declaro que recebi todas as informações acima:</div>' +
     '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%; border: 1px solid #cbd5e1;">' +
       '<thead>' +
         '<tr style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff;">' +
@@ -1353,13 +1381,14 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
     '</table>' +
   '</div>';
 
-  // Montagem final do HTML do Relatório em PDF
+  // Montagem final do HTML do Relatório em PDF com Logo Risel no topo
   var htmlContent = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Relatório de Avaliação de Direção</title><style>@page { size: A4; margin: 10mm 10mm 10mm 10mm; } body { font-family: \'Aptos Narrow\', \'Arial Narrow\', Arial, sans-serif; color: #0f172a; background: #ffffff; margin: 0; padding: 0; }</style></head><body>' +
     '<div style="height: 5px; background: linear-gradient(90deg, #006633 0%, #F99D1C 100%); margin-bottom: 10px; border-radius: 3px;"></div>' +
     '<div style="border-bottom: 2px solid #006633; padding-bottom: 8px; margin-bottom: 14px;">' +
       '<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr>' +
-        '<td width="65%" valign="middle" align="left"><h1 style="margin: 0; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 16px; font-weight: 900; color: #006633; letter-spacing: -0.3px; text-transform: uppercase;">RISEL COMBUSTÍVEIS</h1><p style="margin: 2px 0 0 0; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 10px; font-weight: bold; color: #F99D1C; text-transform: uppercase;">SISTEMA DE MONITORAMENTO E AVALIAÇÃO DE DIREÇÃO</p></td>' +
-        '<td width="35%" align="right" valign="middle" style="font-family: monospace; font-size: 8px; color: #64748b; text-align: right;"><div><strong>EMISSÃO:</strong> ' + dataEmissao + '</div><div><strong>SISTEMA:</strong> MONITORAMENTO RISEL</div></td>' +
+        '<td width="20%" valign="middle" align="left"><img src="https://risel.com.br/wp-content/uploads/2024/07/RISEL.png" style="max-height: 48px; width: auto; display: block;" /></td>' +
+        '<td width="50%" valign="middle" align="left" style="padding-left: 8px;"><h1 style="margin: 0; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 16px; font-weight: 900; color: #006633; letter-spacing: -0.3px; text-transform: uppercase;">RISEL COMBUSTÍVEIS</h1><p style="margin: 2px 0 0 0; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 10px; font-weight: bold; color: #F99D1C; text-transform: uppercase;">SISTEMA DE MONITORAMENTO E AVALIAÇÃO DE DIREÇÃO</p></td>' +
+        '<td width="30%" align="right" valign="middle" style="font-family: monospace; font-size: 8px; color: #64748b; text-align: right;"><div><strong>EMISSÃO:</strong> ' + dataEmissao + '</div><div><strong>SISTEMA:</strong> MONITORAMENTO RISEL</div></td>' +
       '</tr></table>' +
     '</div>' +
 
@@ -1531,11 +1560,15 @@ function getHtmlEmailBody(d) {
   return `
     <div style="font-family: 'Aptos Narrow', 'Arial Narrow', 'Segoe UI', Arial, sans-serif; max-width: 580px; margin: 0 auto; background-color: #f4f7f6; padding: 20px;">
       <div style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.06); border: 1px solid #e0e0e0;">
-        <!-- Header -->
-        <div style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); padding: 18px; text-align: center;">
-          <h1 style="color: #ffffff; margin: 0; font-size: 18px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px; font-family: 'Aptos Narrow', 'Arial Narrow', sans-serif;">Avaliação de Direção</h1>
-          <p style="color: #a8d5ba; margin: 3px 0 0 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Sistema de Monitoramento Risel Combustíveis</p>
-        </div>
+        <!-- Header com Verde Risel (#006633) sólido e fallback seguro para todos os clientes de e-mail -->
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #006633;" bgcolor="#006633">
+          <tr>
+            <td style="background-color: #006633; padding: 22px 18px; text-align: center;" bgcolor="#006633" align="center">
+              <h1 style="color: #ffffff !important; margin: 0; font-size: 20px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px; font-family: 'Aptos Narrow', 'Arial Narrow', Arial, sans-serif;">AVALIAÇÃO DE DIREÇÃO</h1>
+              <p style="color: #f0fdf4 !important; margin: 5px 0 0 0; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">SISTEMA DE MONITORAMENTO RISEL COMBUSTÍVEIS</p>
+            </td>
+          </tr>
+        </table>
 
         <div style="padding: 22px;">
           <!-- Informações em Cards Informativos -->
