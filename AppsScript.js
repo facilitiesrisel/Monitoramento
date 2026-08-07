@@ -1079,7 +1079,7 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
     if (!keyUpper) return true;
 
     // CRÍTICO: Se a chave começar com número (ex: "1)", "30)", "30.", "30 -"), NÃO deve ser excluída
-    var isNumbered = /^(\d+)[\)\.\-\s]/.test(keyUpper);
+    var isNumbered = /^(\d+)/.test(keyUpper);
     if (isNumbered) return false;
 
     if (keyUpper === 'ID' || keyUpper === 'ID_SISTEMA' || keyUpper === 'ID SISTEMA' || keyUpper === 'PROCESSED_SCRIPT' || keyUpper === 'ROW_INDEX') return true;
@@ -1166,10 +1166,15 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
     var valStr = (rawVal ?? '').toString().trim();
 
     // Tentar extrair o número exato da pergunta (ex: "1) ...", "4. ...", "30 - ...")
-    var matchNum = keyClean.match(/^(\d+)[\)\.\-\s]/);
+    var matchNum = keyClean.match(/^(\d+)/);
     var parsedNum = matchNum ? parseInt(matchNum[1], 10) : 0;
 
-    if (parsedNum > 0 && parsedNum <= 30) {
+    // Garantir parsing correto para a pergunta 30 (Câmeras)
+    if (keyUpper.indexOf('30') === 0 || keyUpper.indexOf('30)') !== -1 || keyUpper.indexOf('30.') !== -1 || keyUpper.indexOf('30 -') !== -1 || keyUpper.indexOf('CÂMERAS ESTÃO CORRETAMENTE POSICIONADAS') !== -1 || keyUpper.indexOf('PERMITINDO A AVALIAÇÃO DA CONDUTA') !== -1) {
+      parsedNum = 30;
+    }
+
+    if (parsedNum > 0 && parsedNum <= 50) {
       questionsList.push({ num: parsedNum, key: keyClean, value: valStr });
     } else {
       fallbackCounter++;
@@ -1180,7 +1185,7 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
   // Ordena as perguntas pelo número (1 a 30) para garantir integridade sequencial
   questionsList.sort(function(a, b) { return a.num - b.num; });
 
-  // Montagem do HTML de perguntas com cabeçalhos gradientes verdes preenchendo 100% a linha da tabela
+  // Montagem do HTML de perguntas com cabeçalhos verdes sólidos e títulos de colunas repetidos por seção
   var tableRowsHtml = '';
   for (var q = 0; q < questionsList.length; q++) {
     var qObj = questionsList[q];
@@ -1188,34 +1193,38 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
 
     // Seção 1 (Pergunta 1 e 2): ANTES DO INÍCIO DA VIAGEM
     if (qNum === 1) {
-      tableRowsHtml += '<tr style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff;"><td colspan="2" style="padding: 8px 12px; border: 1px solid #004d26; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11.5px; font-weight: 800; text-transform: uppercase; color: #ffffff; letter-spacing: 0.5px;">ANTES DO INÍCIO DA VIAGEM</td></tr>';
+      tableRowsHtml += '<tr bgcolor="#006633" style="background-color: #006633; color: #ffffff;"><td colspan="2" style="padding: 8px 12px; background-color: #006633; border: 1px solid #004d26; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11.5px; font-weight: 800; text-transform: uppercase; color: #ffffff !important; letter-spacing: 0.5px;" bgcolor="#006633">ANTES DO INÍCIO DA VIAGEM</td></tr>' +
+        '<tr bgcolor="#004d26" style="background-color: #004d26; color: #ffffff;"><td style="padding: 6px 10px; text-align: left; font-size: 10px; font-weight: bold; text-transform: uppercase; border: 1px solid #004d26; color: #ffffff !important; width: 78%; font-family: \'Aptos Narrow\', sans-serif;" bgcolor="#004d26">ITEM DE AVALIAÇÃO</td><td style="padding: 6px 10px; text-align: center; font-size: 10px; font-weight: bold; text-transform: uppercase; border: 1px solid #004d26; color: #ffffff !important; width: 22%; font-family: \'Aptos Narrow\', sans-serif;" bgcolor="#004d26">RESULTADO / RESPOSTA</td></tr>';
     } 
     // Seção 2 (Pergunta 3 até 28): PROCEDIMENTOS DA EMPRESA
     else if (qNum === 3) {
-      tableRowsHtml += '<tr style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff;"><td colspan="2" style="padding: 8px 12px; border: 1px solid #004d26; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11.5px; font-weight: 800; text-transform: uppercase; color: #ffffff; letter-spacing: 0.5px;">PROCEDIMENTOS DA EMPRESA</td></tr>';
+      tableRowsHtml += '<tr bgcolor="#006633" style="background-color: #006633; color: #ffffff;"><td colspan="2" style="padding: 8px 12px; background-color: #006633; border: 1px solid #004d26; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11.5px; font-weight: 800; text-transform: uppercase; color: #ffffff !important; letter-spacing: 0.5px;" bgcolor="#006633">PROCEDIMENTOS DA EMPRESA</td></tr>' +
+        '<tr bgcolor="#004d26" style="background-color: #004d26; color: #ffffff;"><td style="padding: 6px 10px; text-align: left; font-size: 10px; font-weight: bold; text-transform: uppercase; border: 1px solid #004d26; color: #ffffff !important; width: 78%; font-family: \'Aptos Narrow\', sans-serif;" bgcolor="#004d26">ITEM DE AVALIAÇÃO</td><td style="padding: 6px 10px; text-align: center; font-size: 10px; font-weight: bold; text-transform: uppercase; border: 1px solid #004d26; color: #ffffff !important; width: 22%; font-family: \'Aptos Narrow\', sans-serif;" bgcolor="#004d26">RESULTADO / RESPOSTA</td></tr>';
     } 
     // Seção 3 (Pergunta 29 e 30): UTILIZAÇÃO DAS CÂMERAS EMBARCADAS
     else if (qNum === 29) {
-      tableRowsHtml += '<tr style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff;"><td colspan="2" style="padding: 8px 12px; border: 1px solid #004d26; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11.5px; font-weight: 800; text-transform: uppercase; color: #ffffff; letter-spacing: 0.5px;">UTILIZAÇÃO DAS CÂMERAS EMBARCADAS</td></tr>';
+      tableRowsHtml += '<tr bgcolor="#006633" style="background-color: #006633; color: #ffffff;"><td colspan="2" style="padding: 8px 12px; background-color: #006633; border: 1px solid #004d26; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11.5px; font-weight: 800; text-transform: uppercase; color: #ffffff !important; letter-spacing: 0.5px;" bgcolor="#006633">UTILIZAÇÃO DAS CÂMERAS EMBARCADAS</td></tr>' +
+        '<tr bgcolor="#004d26" style="background-color: #004d26; color: #ffffff;"><td style="padding: 6px 10px; text-align: left; font-size: 10px; font-weight: bold; text-transform: uppercase; border: 1px solid #004d26; color: #ffffff !important; width: 78%; font-family: \'Aptos Narrow\', sans-serif;" bgcolor="#004d26">ITEM DE AVALIAÇÃO</td><td style="padding: 6px 10px; text-align: center; font-size: 10px; font-weight: bold; text-transform: uppercase; border: 1px solid #004d26; color: #ffffff !important; width: 22%; font-family: \'Aptos Narrow\', sans-serif;" bgcolor="#004d26">RESULTADO / RESPOSTA</td></tr>';
     }
 
-    var valUpper = qObj.value.toUpperCase();
-    var badgeStyle = 'background: #64748b; color: #ffffff; font-weight: 900; font-size: 11px; padding: 6px 4px; border-radius: 6px; text-transform: uppercase; text-align: center; width: 100%; box-sizing: border-box;';
+    var valUpper = qObj.value.trim().toUpperCase();
+    var cellBgColor = '#64748b'; // Fallback cinza
 
-    if (valUpper === 'SIM') {
-      badgeStyle = 'background: #10b981; color: #ffffff; font-weight: 900; font-size: 11px; padding: 6px 4px; border-radius: 6px; text-transform: uppercase; text-align: center; width: 100%; box-sizing: border-box;';
-    } else if (valUpper === 'NÃO' || valUpper === 'NAO') {
-      badgeStyle = 'background: #ef4444; color: #ffffff; font-weight: 900; font-size: 11px; padding: 6px 4px; border-radius: 6px; text-transform: uppercase; text-align: center; width: 100%; box-sizing: border-box;';
-    } else if (valUpper === 'NA' || valUpper === 'N/A') {
-      badgeStyle = 'background: #3b82f6; color: #ffffff; font-weight: 900; font-size: 11px; padding: 6px 4px; border-radius: 6px; text-transform: uppercase; text-align: center; width: 100%; box-sizing: border-box;';
+    if (valUpper === 'SIM' || valUpper.startsWith('SIM') || valUpper === 'CONFORME') {
+      cellBgColor = '#10b981'; // Verde Risel
+    } else if (valUpper === 'NÃO' || valUpper === 'NAO' || valUpper.startsWith('NÃO') || valUpper.startsWith('NAO')) {
+      cellBgColor = '#ef4444'; // Vermelho
+    } else if (valUpper === 'NA' || valUpper === 'N/A' || valUpper.startsWith('NA') || valUpper.startsWith('N/A')) {
+      cellBgColor = '#3b82f6'; // Azul
     }
 
-    var badgeHtml = '<div style="' + badgeStyle + '">' + (qObj.value || '-') + '</div>';
     var rowBg = (q % 2 === 0) ? '#ffffff' : '#f8fafc';
 
     tableRowsHtml += '<tr style="background-color: ' + rowBg + ';">' +
       '<td style="padding: 7px 10px; border: 1px solid #cbd5e1; font-size: 11.5px; font-weight: bold; color: #1e293b; width: 78%; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif;">' + qObj.key + '</td>' +
-      '<td style="padding: 4px; border: 1px solid #cbd5e1; font-size: 11px; text-align: center; width: 22%; vertical-align: middle;">' + badgeHtml + '</td>' +
+      '<td align="center" valign="middle" bgcolor="' + cellBgColor + '" style="padding: 6px 4px; border: 1px solid #cbd5e1; font-size: 11px; text-align: center; width: 22%; vertical-align: middle; background-color: ' + cellBgColor + ' !important; color: #ffffff !important; font-weight: 900; text-transform: uppercase;" bgcolor="' + cellBgColor + '">' +
+        '<span style="color: #ffffff !important; font-weight: 900; font-family: \'Aptos Narrow\', sans-serif;">' + (qObj.value || '-') + '</span>' +
+      '</td>' +
     '</tr>';
   }
 
@@ -1267,22 +1276,18 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
     for (var i = 0; i < imgBlocks.length; i += 2) {
       imagesHtml += '<tr>';
       var b1 = imgBlocks[i];
-      imagesHtml += '<td width="49%" valign="top" style="width: 49%;">' +
-        '<div style="margin-bottom: 10px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 6px; background: #ffffff; text-align: center; page-break-inside: avoid;">' +
-          '<div style="border-radius: 6px; overflow: hidden; background: #f8fafc; text-align: center; height: 180px; width: 100%; display: flex; align-items: center; justify-content: center;">' +
-            '<img src="' + b1.base64 + '" style="max-width: 100%; max-height: 180px; width: auto; height: auto; object-fit: contain; display: block; margin: 0 auto; border: 0;" />' +
-          '</div>' +
+      imagesHtml += '<td width="49%" valign="top" style="width: 49%; padding: 4px;">' +
+        '<div style="margin-bottom: 8px; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 6px; background-color: #ffffff; text-align: center; page-break-inside: avoid;">' +
+          '<img src="' + b1.base64 + '" style="width: 100%; max-width: 100%; height: auto; max-height: 220px; display: block; margin: 0 auto; border: 0; border-radius: 4px;" />' +
         '</div>' +
       '</td>';
 
       if (i + 1 < imgBlocks.length) {
         var b2 = imgBlocks[i+1];
         imagesHtml += '<td width="2%" style="width: 2%;"></td>';
-        imagesHtml += '<td width="49%" valign="top" style="width: 49%;">' +
-          '<div style="margin-bottom: 10px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 6px; background: #ffffff; text-align: center; page-break-inside: avoid;">' +
-            '<div style="border-radius: 6px; overflow: hidden; background: #f8fafc; text-align: center; height: 180px; width: 100%; display: flex; align-items: center; justify-content: center;">' +
-              '<img src="' + b2.base64 + '" style="max-width: 100%; max-height: 180px; width: auto; height: auto; object-fit: contain; display: block; margin: 0 auto; border: 0;" />' +
-            '</div>' +
+        imagesHtml += '<td width="49%" valign="top" style="width: 49%; padding: 4px;">' +
+          '<div style="margin-bottom: 8px; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 6px; background-color: #ffffff; text-align: center; page-break-inside: avoid;">' +
+            '<img src="' + b2.base64 + '" style="width: 100%; max-width: 100%; height: auto; max-height: 220px; display: block; margin: 0 auto; border: 0; border-radius: 4px;" />' +
           '</div>' +
         '</td>';
       } else {
@@ -1297,11 +1302,11 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
   var planoAcaoHtml = '<div style="margin-top: 18px; margin-bottom: 16px; page-break-inside: avoid;">' +
     '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%; border: 1px solid #cbd5e1;">' +
       '<thead>' +
-        '<tr style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff;">' +
-          '<th style="padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 40%; text-align: left; font-family: \'Aptos Narrow\', sans-serif;">PLANO DE AÇÃO</th>' +
-          '<th style="padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 18%; text-align: center; font-family: \'Aptos Narrow\', sans-serif;">PRAZO</th>' +
-          '<th style="padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 18%; text-align: center; font-family: \'Aptos Narrow\', sans-serif;">STATUS</th>' +
-          '<th style="padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 24%; text-align: left; font-family: \'Aptos Narrow\', sans-serif;">RESPONSÁVEL</th>' +
+        '<tr bgcolor="#006633" style="background-color: #006633; color: #ffffff;">' +
+          '<th bgcolor="#006633" style="background-color: #006633; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; color: #ffffff !important; width: 40%; text-align: left; font-family: \'Aptos Narrow\', sans-serif;">PLANO DE AÇÃO</th>' +
+          '<th bgcolor="#006633" style="background-color: #006633; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; color: #ffffff !important; width: 18%; text-align: center; font-family: \'Aptos Narrow\', sans-serif;">PRAZO</th>' +
+          '<th bgcolor="#006633" style="background-color: #006633; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; color: #ffffff !important; width: 18%; text-align: center; font-family: \'Aptos Narrow\', sans-serif;">STATUS</th>' +
+          '<th bgcolor="#006633" style="background-color: #006633; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; color: #ffffff !important; width: 24%; text-align: left; font-family: \'Aptos Narrow\', sans-serif;">RESPONSÁVEL</th>' +
         '</tr>' +
       '</thead>' +
       '<tbody>' +
@@ -1318,22 +1323,18 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
     '<div style="background: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #006633; border-radius: 6px; padding: 10px 12px; font-size: 11.5px; color: #0f172a; line-height: 1.4; min-height: 32px; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif;">' + observacaoVal + '</div>' +
   '</div>';
 
-  // 3. Quadros/Cards de PONTOS POR HORA e RESULTADO GERAL
+  // 3. Quadros/Cards de PONTOS POR HORA e RESULTADO GERAL (Mesmo tamanho e largura)
   var pontosResultadoHtml = '<div style="margin-top: 18px; margin-bottom: 16px; page-break-inside: avoid;">' +
-    '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="table-layout: fixed; width: 100%;">' +
+    '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="table-layout: fixed; width: 100%; border-spacing: 0; border-collapse: separate;">' +
       '<tr>' +
-        '<td width="48%" valign="top">' +
-          '<div style="background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); border: 2px solid #006633; border-radius: 10px; padding: 14px 16px; text-align: center; box-sizing: border-box;">' +
-            '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 10px; font-weight: 800; color: #006633; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px;">PONTOS POR HORA / PONTUAÇÃO</div>' +
-            '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 24px; font-weight: 900; color: #006633; margin-top: 2px;">' + pontosVal + '</div>' +
-          '</div>' +
+        '<td width="48%" valign="middle" align="center" bgcolor="#f8fafc" style="width: 48%; background-color: #f8fafc; border: 2px solid #006633; border-radius: 10px; padding: 14px 12px; text-align: center; height: 90px; vertical-align: middle;">' +
+          '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 10px; font-weight: 800; color: #006633; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">PONTOS POR HORA / PONTUAÇÃO</div>' +
+          '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 26px; font-weight: 900; color: #006633;">' + pontosVal + '</div>' +
         '</td>' +
-        '<td width="4%"></td>' +
-        '<td width="48%" valign="top">' +
-          '<div style="background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); border: 2px solid #16a34a; border-radius: 10px; padding: 14px 16px; text-align: center; box-sizing: border-box;">' +
-            '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 10px; font-weight: 800; color: #15803d; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px;">RESULTADO GERAL DO ACOMPANHAMENTO</div>' +
-            '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 28px; font-weight: 900; color: #16a34a; margin-top: 2px;">' + resultadoVal + '</div>' +
-          '</div>' +
+        '<td width="4%" style="width: 4%;"></td>' +
+        '<td width="48%" valign="middle" align="center" bgcolor="#f0fdf4" style="width: 48%; background-color: #f0fdf4; border: 2px solid #16a34a; border-radius: 10px; padding: 14px 12px; text-align: center; height: 90px; vertical-align: middle;">' +
+          '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 10px; font-weight: 800; color: #15803d; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">RESULTADO GERAL DO ACOMPANHAMENTO</div>' +
+          '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 26px; font-weight: 900; color: #16a34a;">' + resultadoVal + '</div>' +
         '</td>' +
       '</tr>' +
     '</table>' +
@@ -1344,11 +1345,11 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
     '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11.5px; font-weight: bold; color: #006633; text-transform: uppercase; border-left: 4px solid #006633; padding-left: 8px; margin-bottom: 6px; letter-spacing: 0.5px;">CONVERSA DE FEEDBACK</div>' +
     '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%; border: 1px solid #cbd5e1;">' +
       '<thead>' +
-        '<tr style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff;">' +
-          '<th style="padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 18%; text-align: center; font-family: \'Aptos Narrow\', sans-serif;">DATA</th>' +
-          '<th style="padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 34%; text-align: left; font-family: \'Aptos Narrow\', sans-serif;">NOME DO GESTOR</th>' +
-          '<th style="padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 22%; text-align: left; font-family: \'Aptos Narrow\', sans-serif;">FUNÇÃO</th>' +
-          '<th style="padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 26%; text-align: center; font-family: \'Aptos Narrow\', sans-serif;">ASSINATURA</th>' +
+        '<tr bgcolor="#006633" style="background-color: #006633; color: #ffffff;">' +
+          '<th bgcolor="#006633" style="background-color: #006633; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; color: #ffffff !important; width: 18%; text-align: center; font-family: \'Aptos Narrow\', sans-serif;">DATA</th>' +
+          '<th bgcolor="#006633" style="background-color: #006633; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; color: #ffffff !important; width: 34%; text-align: left; font-family: \'Aptos Narrow\', sans-serif;">NOME DO GESTOR</th>' +
+          '<th bgcolor="#006633" style="background-color: #006633; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; color: #ffffff !important; width: 22%; text-align: left; font-family: \'Aptos Narrow\', sans-serif;">FUNÇÃO</th>' +
+          '<th bgcolor="#006633" style="background-color: #006633; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; color: #ffffff !important; width: 26%; text-align: center; font-family: \'Aptos Narrow\', sans-serif;">ASSINATURA</th>' +
         '</tr>' +
       '</thead>' +
       '<tbody>' +
@@ -1367,9 +1368,9 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
     '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11.5px; font-weight: bold; color: #334155; margin-bottom: 6px;">Declaro que recebi todas as informações acima:</div>' +
     '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%; border: 1px solid #cbd5e1;">' +
       '<thead>' +
-        '<tr style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff;">' +
-          '<th style="padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 50%; text-align: left; font-family: \'Aptos Narrow\', sans-serif;">NOME MOTORISTA</th>' +
-          '<th style="padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 50%; text-align: center; font-family: \'Aptos Narrow\', sans-serif;">ASSINATURA</th>' +
+        '<tr bgcolor="#006633" style="background-color: #006633; color: #ffffff;">' +
+          '<th bgcolor="#006633" style="background-color: #006633; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; color: #ffffff !important; width: 50%; text-align: left; font-family: \'Aptos Narrow\', sans-serif;">NOME MOTORISTA</th>' +
+          '<th bgcolor="#006633" style="background-color: #006633; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; color: #ffffff !important; width: 50%; text-align: center; font-family: \'Aptos Narrow\', sans-serif;">ASSINATURA</th>' +
         '</tr>' +
       '</thead>' +
       '<tbody>' +
@@ -1396,7 +1397,7 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
     '<div style="margin-bottom: 14px;">' +
       '<div style="background-color: #f8fafc; border: 1.5px solid #006633; border-radius: 6px; padding: 6px 10px; margin-bottom: 6px;"><span style="font-size: 8.5px; color: #006633; font-weight: bold; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">👤 MOTORISTA</span><div style="font-size: 12px; font-weight: 800; color: #0f172a; margin-top: 2px; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">' + motorista + '</div></div>' +
       '<div style="background-color: #f8fafc; border: 1.5px solid #006633; border-radius: 6px; padding: 6px 10px; margin-bottom: 10px;"><span style="font-size: 8.5px; color: #006633; font-weight: bold; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">📋 AVALIADOR</span><div style="font-size: 12px; font-weight: 800; color: #0f172a; margin-top: 2px; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">' + avaliador + '</div></div>' +
-      '<div style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11px; font-weight: 800; text-transform: uppercase; padding: 7px 12px; border-radius: 6px; text-align: center; letter-spacing: 0.5px; margin-bottom: 6px;">INFORMAÇÕES DA DESCARGA</div>' +
+      '<div bgcolor="#006633" style="background-color: #006633; color: #ffffff; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11px; font-weight: 800; text-transform: uppercase; padding: 7px 12px; border-radius: 6px; text-align: center; letter-spacing: 0.5px; margin-bottom: 6px;">INFORMAÇÕES DA DESCARGA</div>' +
       '<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; margin-bottom: 5px;"><span style="font-size: 8.5px; color: #475569; font-weight: bold; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">🏢 TRANSPORTADORA</span><div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-top: 1px; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">' + transportadora + '</div></div>' +
       '<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; margin-bottom: 5px;"><span style="font-size: 8.5px; color: #475569; font-weight: bold; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">🚛 FROTA</span><div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-top: 1px; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">' + frota + '</div></div>' +
       '<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; margin-bottom: 5px;"><span style="font-size: 8.5px; color: #475569; font-weight: bold; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">📅 DATA DA AVALIAÇÃO</span><div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-top: 1px; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">' + dataAval + '</div></div>' +
@@ -1406,7 +1407,6 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
     // Tabela de Perguntas 1 a 30
     '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11.5px; font-weight: bold; color: #006633; text-transform: uppercase; border-left: 4px solid #006633; padding-left: 8px; margin-top: 10px; margin-bottom: 10px; letter-spacing: 0.5px;">Detalhamento dos Itens Avaliados</div>' +
     '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; margin-bottom: 14px; border: 1px solid #cbd5e1;">' +
-      '<thead><tr style="background-color: #006633; color: #ffffff;"><th style="padding: 7px 10px; text-align: left; font-size: 10px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 78%; font-family: \'Aptos Narrow\', sans-serif;">Item de Avaliação</th><th style="padding: 7px 10px; text-align: center; font-size: 10px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 22%; font-family: \'Aptos Narrow\', sans-serif;">Resultado / Resposta</th></tr></thead>' +
       '<tbody>' + tableRowsHtml + '</tbody>' +
     '</table>' +
 
@@ -1611,11 +1611,21 @@ function getHtmlEmailBody(d) {
             </tr>
           </table>
 
-          <!-- Card do Resultado Geral & Pontos -->
-          <div style="margin-top: 18px; background-color: #f0fdf4; border: 1.5px solid #16a34a; border-radius: 10px; padding: 14px; text-align: center;">
-            <div style="font-size: 10px; color: #15803d; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;">RESULTADO GERAL DO ACOMPANHAMENTO</div>
-            <div style="font-size: 32px; color: #006633; font-weight: 900; margin: 4px 0;">${resultado}</div>
-            <div style="font-size: 11px; color: #334155; font-weight: 700; margin-top: 4px;">Pontos por Hora: <span style="color: #006633; font-weight: 900;">${pontos}</span></div>
+          <!-- Card do Resultado Geral & Pontos (Lado a Lado Simétricos) -->
+          <div style="margin-top: 18px;">
+            <table width="100%" border="0" cellspacing="0" cellpadding="0" style="table-layout: fixed; width: 100%; border-spacing: 0; border-collapse: separate;">
+              <tr>
+                <td width="48%" valign="middle" align="center" bgcolor="#f8fafc" style="width: 48%; background-color: #f8fafc; border: 2px solid #006633; border-radius: 10px; padding: 12px 10px; text-align: center; height: 85px; vertical-align: middle;">
+                  <div style="font-size: 9px; color: #006633; text-transform: uppercase; font-weight: 800; font-family: 'Aptos Narrow', sans-serif; letter-spacing: 0.5px; margin-bottom: 4px;">PONTOS POR HORA / PONTUAÇÃO</div>
+                  <div style="font-size: 24px; color: #006633; font-weight: 900; font-family: 'Aptos Narrow', sans-serif;">${pontos}</div>
+                </td>
+                <td width="4%" style="width: 4%;"></td>
+                <td width="48%" valign="middle" align="center" bgcolor="#f0fdf4" style="width: 48%; background-color: #f0fdf4; border: 2px solid #16a34a; border-radius: 10px; padding: 12px 10px; text-align: center; height: 85px; vertical-align: middle;">
+                  <div style="font-size: 9px; color: #15803d; text-transform: uppercase; font-weight: 800; font-family: 'Aptos Narrow', sans-serif; letter-spacing: 0.5px; margin-bottom: 4px;">RESULTADO GERAL DO ACOMPANHAMENTO</div>
+                  <div style="font-size: 24px; color: #16a34a; font-weight: 900; font-family: 'Aptos Narrow', sans-serif;">${resultado}</div>
+                </td>
+              </tr>
+            </table>
           </div>
 
           <!-- Observações -->
