@@ -1081,10 +1081,14 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
     if (keyUpper.indexOf('MERGED DOC') !== -1) return true;
     if (keyUpper.indexOf('DOCUMENT MERGE') !== -1) return true;
     if (keyUpper.indexOf('LINK TO MERGED') !== -1) return true;
-    if (keyUpper.indexOf('ANÁLISE COMPORTAMENTO DIREÇÃO') !== -1 && (keyUpper.indexOf('URL') !== -1 || keyUpper.indexOf('ID') !== -1 || keyUpper.indexOf('LINK') !== -1 || keyUpper.indexOf('STATUS') !== -1)) return true;
-    if (keyUpper.indexOf('ANÁLISE COMPORTAMENTAL DO MOTORISTA') !== -1 && (keyUpper.indexOf('URL') !== -1 || keyUpper.indexOf('ID') !== -1 || keyUpper.indexOf('LINK') !== -1 || keyUpper.indexOf('STATUS') !== -1)) return true;
+    if (keyUpper.indexOf('ANÁLISE COMPORTAMENTO DIREÇÃO') !== -1) return true;
+    if (keyUpper.indexOf('ANÁLISE COMPORTAMENTAL DO MOTORISTA') !== -1) return true;
     
-    // Excluir metadados e resumos finais do loop de perguntas para garantir que as 30 perguntas apareçam corretamente
+    // Se a chave começar com número (ex: "1)", "28)", "4."), NÃO deve ser excluída pelas regras de texto
+    var isNumbered = /^(\d+)[\)\.\-\s]/.test(keyUpper);
+    if (isNumbered) return false;
+
+    // Excluir metadados e resumos finais do loop de perguntas para evitar duplicatas nas perguntas
     var excludeList = [
       'MOTORISTA', 'AVALIADOR', 'TRANSPORTADORA', 'EMPRESA', 'FROTA', 'PLACA', 'VEICULO', 'VEÍCULO',
       'BASE', 'UNIDADE', 'DATA', 'DATA AVALIAÇÃO', 'DATA AVALIACAO', 'HORA', 'HORÁRIO', 'LOCAL', 'TRECHO',
@@ -1092,12 +1096,13 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
       'PLANO DE AÇÃO', 'PLANO DE ACAO', 'PRAZO', 'STATUS', 'RESPONSÁVEL', 'RESPONSAVEL', 'LUCAS DANIEL',
       'RESULTADO GERAL DO ACOMPANHAMENTO', 'RESULTADO GERAL', 'RESULTADO (%)', 'RESULTADO',
       'PONTOS POR HORA', 'PONTUAÇÃO', 'PONTUACAO', 'PONTOS',
-      'NOME SUPERVISOR', 'SUPERVISOR', 'FUNÇÃO', 'FUNCAO', 'OBSERVAÇÕES', 'OBSERVAÇÃO', 'OBSERVACAO', 'COMENATÁRIOS', 'COMETÁRIOS',
+      'NOME SUPERVISOR', 'SUPERVISOR', 'GESTOR', 'NOME DO GESTOR', 'FUNÇÃO', 'FUNCAO', 
+      'OBSERVAÇÕES', 'OBSERVAÇÃO', 'OBSERVACAO', 'COMENATÁRIOS', 'COMETÁRIOS',
       'CONVERSA DE FEEDBACK', 'DECLARAÇÃO DO MOTORISTA', 'DECLARACAO DO MOTORISTA'
     ];
 
     for (var i = 0; i < excludeList.length; i++) {
-      if (keyUpper === excludeList[i]) return true;
+      if (keyUpper === excludeList[i] || keyUpper.indexOf(excludeList[i]) !== -1) return true;
     }
 
     return false;
@@ -1146,10 +1151,10 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
   var gestorNome = String(data['NOME SUPERVISOR'] || data['SUPERVISOR'] || data['GESTOR'] || data['NOME DO GESTOR'] || avaliador).trim().toUpperCase();
   var gestorFuncao = String(data['FUNÇÃO'] || data['FUNCAO'] || 'SUPERVISOR DE OPERAÇÕES').trim().toUpperCase();
 
-  // Coleta de todas as 30 perguntas
+  // Coleta e ordenação de todas as 30 perguntas
   var initialKeys = ['MOTORISTA', 'AVALIADOR', 'TRANSPORTADORA', 'EMPRESA', 'FROTA', 'PLACA', 'VEICULO', 'VEÍCULO', 'BASE', 'UNIDADE', 'DATA', 'DATA AVALIAÇÃO', 'DATA AVALIACAO', 'HORA', 'HORÁRIO', 'LOCAL', 'TRECHO', 'LOCAL/TRECHO', 'LOCAL / TRECHO', 'LOCAL DA AVALIAÇÃO'];
   var questionsList = [];
-  var qCounter = 0;
+  var fallbackCounter = 0;
 
   for (var k in data) {
     var keyClean = String(k).trim();
@@ -1158,13 +1163,23 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
     var keyUpper = keyClean.toUpperCase();
     if (initialKeys.some(function(ik) { return keyUpper.indexOf(ik) !== -1; })) continue;
 
-    if (qCounter < 30) {
-      qCounter++;
-      var rawVal = data[k];
-      var valStr = (rawVal ?? '').toString().trim();
-      questionsList.push({ num: qCounter, key: keyClean, value: valStr });
+    var rawVal = data[k];
+    var valStr = (rawVal ?? '').toString().trim();
+
+    // Tentar extrair o número exato da pergunta (ex: "1) ...", "4. ...", "30 - ...")
+    var matchNum = keyClean.match(/^(\d+)[\)\.\-\s]/);
+    var parsedNum = matchNum ? parseInt(matchNum[1], 10) : 0;
+
+    if (parsedNum > 0 && parsedNum <= 30) {
+      questionsList.push({ num: parsedNum, key: keyClean, value: valStr });
+    } else {
+      fallbackCounter++;
+      questionsList.push({ num: fallbackCounter, key: keyClean, value: valStr });
     }
   }
+
+  // Ordena as perguntas pelo número (1 a 30) para garantir integridade sequencial
+  questionsList.sort(function(a, b) { return a.num - b.num; });
 
   // Montagem do HTML de perguntas com cabeçalhos gradientes verdes atualizados
   var tableRowsHtml = '';
