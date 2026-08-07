@@ -1112,7 +1112,17 @@ function enviarRelatorio(data, destinatarioOverride, copiaOverride, reqFiles) {
     to: destinatarioOverride || EMAIL_DESTINATARIOS_PRINCIPAIS,
     subject: 'AVALIAÇÃO DE DIREÇÃO - ' + motorista + ' (' + dataSomenteData + ')',
     name: 'Sistema de Monitoramento Risel',
-    htmlBody: getHtmlEmailBody({motorista, avaliador: data['AVALIADOR'], frota: data['FROTA'], dataAval: dataSomenteData, resultado}),
+    htmlBody: getHtmlEmailBody({
+      motorista: motorista,
+      avaliador: data['AVALIADOR'] || data['Avaliador'] || 'N/A',
+      transportadora: data['TRANSPORTADORA'] || data['Transportadora'] || data['EMPRESA'] || 'RISEL COMBUSTÍVEIS',
+      frota: data['FROTA'] || data['Frota'] || data['VEÍCULO'] || data['PLACA'] || 'N/A',
+      local: data['LOCAL / TRECHO'] || data['LOCAL/TRECHO'] || data['LOCAL DA AVALIAÇÃO'] || data['LOCAL'] || data['TRECHO'] || 'N/A',
+      dataAval: dataSomenteData,
+      resultado: resultado,
+      pontos: data['PONTOS POR HORA'] || data['PONTUAÇÃO'] || data['Pontos'] || 'N/D',
+      observacao: data['OBSERVAÇÕES'] || data['Observações'] || data['OBSERVAÇÃO'] || ''
+    }),
     attachments: attachmentsList
   };
 
@@ -1129,7 +1139,6 @@ function enviarRelatorio(data, destinatarioOverride, copiaOverride, reqFiles) {
 function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
   var dataEmissao = new Date().toLocaleString('pt-BR');
 
-  // Helper para verificar chaves excluídas do relatório
   function isExcludedKey(k) {
     var keyUpper = String(k || '').trim().toUpperCase();
     if (!keyUpper) return true;
@@ -1149,227 +1158,116 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
     'REGISTROS DE VERIFICAÇÃO DAS IMAGENS 4'
   ];
 
-  var motorista = String(data['MOTORISTA'] || data['Motorista'] || 'MOTORISTA').trim().toUpperCase();
+  var motorista = String(data['MOTORISTA'] || data['Motorista'] || 'N/A').trim().toUpperCase();
   var avaliador = String(data['AVALIADOR'] || data['Avaliador'] || 'N/A').trim().toUpperCase();
+  var transportadora = String(data['TRANSPORTADORA'] || data['Transportadora'] || data['EMPRESA'] || 'RISEL COMBUSTÍVEIS').trim().toUpperCase();
+  var frota = String(data['FROTA'] || data['Frota'] || data['VEÍCULO'] || data['PLACA'] || 'N/A').trim().toUpperCase();
 
-  var initialInfoList = [];
-  var questionsList = [];
-  var outcomeList = [];
+  var dataAvalRaw = data['DATA AVALIAÇÃO'] || data['Data Avaliação'] || data['DATA AVALIACAO'] || data['DATA'] || '';
+  var dataAval = 'N/A';
+  if (dataAvalRaw instanceof Date) {
+    dataAval = Utilities.formatDate(dataAvalRaw, Session.getScriptTimeZone(), "dd/MM/yyyy");
+  } else if (typeof dataAvalRaw === 'string' && dataAvalRaw.trim() !== '') {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dataAvalRaw.trim())) {
+      var pData = dataAvalRaw.trim().split('-');
+      dataAval = pData[2] + '/' + pData[1] + '/' + pData[0];
+    } else {
+      dataAval = dataAvalRaw.trim();
+    }
+  }
 
+  var localTrecho = String(data['LOCAL / TRECHO'] || data['LOCAL/TRECHO'] || data['LOCAL DA AVALIAÇÃO'] || data['LOCAL'] || data['TRECHO'] || 'N/A').trim().toUpperCase();
+
+  var resultadoVal = String(data['RESULTADO'] || data['Resultado'] || '100%').trim();
+  if (typeof data['RESULTADO'] === 'number') {
+    resultadoVal = (data['RESULTADO'] * 100).toFixed(2) + '%';
+  }
+  var pontosVal = String(data['PONTOS POR HORA'] || data['PONTUAÇÃO'] || data['Pontos'] || data['PONTOS'] || '0').trim();
+
+  var observacaoVal = String(
+    data['OBSERVAÇÕES'] || data['Observações'] || data['OBSERVAÇÃO'] || data['Observação'] || data['COMENATÁRIOS'] || 'Nenhum comentário registrado.'
+  ).trim();
+
+  // Coleta das 30 perguntas
   var initialKeys = ['MOTORISTA', 'AVALIADOR', 'TRANSPORTADORA', 'EMPRESA', 'FROTA', 'PLACA', 'VEICULO', 'VEÍCULO', 'BASE', 'UNIDADE', 'DATA', 'DATA AVALIAÇÃO', 'DATA AVALIACAO', 'HORA', 'HORÁRIO', 'LOCAL', 'TRECHO', 'LOCAL/TRECHO', 'LOCAL / TRECHO', 'LOCAL DA AVALIAÇÃO'];
-
+  var questionsList = [];
   var pastLocalTrecho = false;
-  var questionCounter = 0;
+  var qCounter = 0;
 
   for (var k in data) {
     var keyClean = String(k).trim();
-    if (isExcludedKey(keyClean)) continue;
-    if (IMAGE_HEADERS.includes(keyClean)) continue;
+    if (isExcludedKey(keyClean) || IMAGE_HEADERS.includes(keyClean)) continue;
 
     var keyUpper = keyClean.toUpperCase();
+    if (initialKeys.some(function(ik) { return keyUpper.indexOf(ik) !== -1; })) continue;
 
-    var rawVal = data[k];
-    var valStr = '';
-    if (rawVal instanceof Date) {
-      valStr = Utilities.formatDate(rawVal, Session.getScriptTimeZone(), "dd/MM/yyyy");
-    } else if (typeof rawVal === 'number') {
-      if (rawVal <= 1 && rawVal > 0) {
-        valStr = (rawVal * 100).toFixed(1) + '%';
-      } else {
-        valStr = String(rawVal);
-      }
-    } else {
-      valStr = String(rawVal ?? '').trim();
-    }
-
-    if (keyUpper.includes('DATA') && /^\d{4}-\d{2}-\d{2}$/.test(valStr)) {
-      var p = valStr.split('-');
-      valStr = p[2] + '/' + p[1] + '/' + p[0];
-    }
-
-    if (!pastLocalTrecho) {
-      initialInfoList.push({ key: keyClean, value: valStr });
-      if (keyUpper.includes('LOCAL') || keyUpper.includes('TRECHO')) {
-        pastLocalTrecho = true;
-      }
-      continue;
-    }
-
-    if (questionCounter < 30) {
-      questionCounter++;
-      questionsList.push({ num: questionCounter, key: keyClean, value: valStr });
-    } else {
-      outcomeList.push({ key: keyClean, value: valStr });
+    if (qCounter < 30) {
+      qCounter++;
+      var rawVal = data[k];
+      var valStr = (rawVal ?? '').toString().trim();
+      questionsList.push({ num: qCounter, key: keyClean, value: valStr });
     }
   }
 
-  if (!pastLocalTrecho && initialInfoList.length > 0) {
-    var reCheckInitial = [];
-    var reCheckQuestions = [];
-    for (var i = 0; i < initialInfoList.length; i++) {
-      var item = initialInfoList[i];
-      var ku = item.key.toUpperCase();
-      if (initialKeys.some(function(ik) { return ku.indexOf(ik) !== -1; })) {
-        reCheckInitial.push(item);
-      } else {
-        reCheckQuestions.push(item);
-      }
-    }
-    initialInfoList = reCheckInitial;
-    for (var j = 0; j < reCheckQuestions.length; j++) {
-      if (questionCounter < 30) {
-        questionCounter++;
-        questionsList.push({ num: questionCounter, key: reCheckQuestions[j].key, value: reCheckQuestions[j].value });
-      } else {
-        outcomeList.push(reCheckQuestions[j]);
-      }
-    }
-  }
-
-  // 1. CARDS DE INFORMAÇÕES INICIAIS (até LOCAL/TRECHO)
-  var initialCardsHtml = '';
-  if (initialInfoList.length > 0) {
-    initialCardsHtml += '<div style="margin-bottom: 16px;">' +
-      '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="table-layout: fixed; width: 100%;">';
-
-    for (var a = 0; a < initialInfoList.length; a += 3) {
-      initialCardsHtml += '<tr>';
-      for (var col = 0; col < 3; col++) {
-        var idx = a + col;
-        if (idx < initialInfoList.length) {
-          var itemCard = initialInfoList[idx];
-          var icon = '📌';
-          var kUpper = itemCard.key.toUpperCase();
-          if (kUpper.includes('MOTORISTA')) icon = '👤';
-          else if (kUpper.includes('AVALIADOR')) icon = '📋';
-          else if (kUpper.includes('FROTA') || kUpper.includes('VEICULO') || kUpper.includes('PLACA')) icon = '🚛';
-          else if (kUpper.includes('BASE') || kUpper.includes('UNIDADE')) icon = '📍';
-          else if (kUpper.includes('DATA') || kUpper.includes('HORA')) icon = '📅';
-          else if (kUpper.includes('LOCAL') || kUpper.includes('TRECHO')) icon = '🗺️';
-          else if (kUpper.includes('TRANSPORTADORA') || kUpper.includes('EMPRESA')) icon = '🏢';
-
-          initialCardsHtml += '<td width="32%" valign="top" style="width: 32%; padding-bottom: 8px;">' +
-            '<div style="background-color: #f8fafc; border: 1.5px solid #006633; border-radius: 8px; padding: 8px 10px; height: 48px; box-sizing: border-box;">' +
-              '<span style="font-size: 8px; color: #006633; font-weight: bold; text-transform: uppercase;">' + icon + ' ' + itemCard.key + '</span>' +
-              '<div style="font-size: 11px; font-weight: 800; color: #0f172a; margin-top: 2px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">' + (itemCard.value || 'N/D') + '</div>' +
-            '</div>' +
-          '</td>';
-        } else {
-          initialCardsHtml += '<td width="32%"></td>';
-        }
-
-        if (col < 2) {
-          initialCardsHtml += '<td width="2%"></td>';
-        }
-      }
-      initialCardsHtml += '</tr>';
-    }
-
-    initialCardsHtml += '</table></div>';
-  }
-
-  // 2. TABELA DE PERGUNTAS E RESPOSTAS (PERGUNTAS 1 A 30)
+  // Montagem do HTML de perguntas com cabeçalhos gradientes verdes
   var tableRowsHtml = '';
-
   for (var q = 0; q < questionsList.length; q++) {
     var qObj = questionsList[q];
     var qNum = qObj.num;
-    var qKey = qObj.key;
-    var valStr = qObj.value;
 
     if (qNum === 1) {
-      tableRowsHtml += '<tr>' +
-        '<td colspan="2" style="padding: 10px 0 6px 0; border: none; background: transparent;">' +
-          '<div style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff; font-family: Arial, sans-serif; font-size: 10px; font-weight: 800; text-transform: uppercase; padding: 7px 12px; border-radius: 6px; letter-spacing: 0.5px;">' +
-            'ANTES DO INÍCIO DA VIAGEM' +
-          '</div>' +
-        '</td>' +
-      '</tr>';
+      tableRowsHtml += '<tr><td colspan="2" style="padding: 10px 0 6px 0; border: none; background: transparent;"><div style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff; font-family: Arial, sans-serif; font-size: 10px; font-weight: 800; text-transform: uppercase; padding: 7px 12px; border-radius: 6px; letter-spacing: 0.5px;">ANTES DO INÍCIO DA VIAGEM</div></td></tr>';
     } else if (qNum === 3) {
-      tableRowsHtml += '<tr>' +
-        '<td colspan="2" style="padding: 10px 0 6px 0; border: none; background: transparent;">' +
-          '<div style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff; font-family: Arial, sans-serif; font-size: 10px; font-weight: 800; text-transform: uppercase; padding: 7px 12px; border-radius: 6px; letter-spacing: 0.5px;">' +
-            'PROCEDIMENTOS DA EMPRESA RISEL COMBUSTÍVEIS' +
-          '</div>' +
-        '</td>' +
-      '</tr>';
+      tableRowsHtml += '<tr><td colspan="2" style="padding: 10px 0 6px 0; border: none; background: transparent;"><div style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff; font-family: Arial, sans-serif; font-size: 10px; font-weight: 800; text-transform: uppercase; padding: 7px 12px; border-radius: 6px; letter-spacing: 0.5px;">PROCEDIMENTOS DA EMPRESA</div></td></tr>';
     } else if (qNum === 13) {
-      tableRowsHtml += '<tr>' +
-        '<td colspan="2" style="padding: 10px 0 6px 0; border: none; background: transparent;">' +
-          '<div style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff; font-family: Arial, sans-serif; font-size: 10px; font-weight: 800; text-transform: uppercase; padding: 7px 12px; border-radius: 6px; letter-spacing: 0.5px;">' +
-            'PROCEDIMENTOS DA DIREÇÃO SEGURA' +
-          '</div>' +
-        '</td>' +
-      '</tr>';
+      tableRowsHtml += '<tr><td colspan="2" style="padding: 10px 0 6px 0; border: none; background: transparent;"><div style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff; font-family: Arial, sans-serif; font-size: 10px; font-weight: 800; text-transform: uppercase; padding: 7px 12px; border-radius: 6px; letter-spacing: 0.5px;">PROCEDIMENTOS DA DIREÇÃO SEGURA</div></td></tr>';
+    } else if (qNum === 29) {
+      tableRowsHtml += '<tr><td colspan="2" style="padding: 10px 0 6px 0; border: none; background: transparent;"><div style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff; font-family: Arial, sans-serif; font-size: 10px; font-weight: 800; text-transform: uppercase; padding: 7px 12px; border-radius: 6px; letter-spacing: 0.5px;">UTILIZAÇÃO DAS CÂMERAS EMBARCADAS</div></td></tr>';
     }
 
-    var valUpper = valStr.toUpperCase();
-    var cellGradientStyle = '';
+    var valUpper = qObj.value.toUpperCase();
+    var badgeStyle = 'background: #f1f5f9; color: #0f172a; font-weight: 700; font-size: 9px; padding: 5px 2px; border-radius: 4px; text-align: center; width: 100%; box-sizing: border-box;';
 
     if (valUpper === 'SIM') {
-      cellGradientStyle = 'background: linear-gradient(135deg, #16a34a 0%, #15803d 100%); color: #ffffff; font-weight: 900; font-size: 10px; padding: 5px 2px; border-radius: 4px; text-transform: uppercase; text-align: center; width: 100%; box-sizing: border-box;';
+      badgeStyle = 'background: linear-gradient(135deg, #16a34a 0%, #15803d 100%); color: #ffffff; font-weight: 900; font-size: 10px; padding: 5px 2px; border-radius: 4px; text-transform: uppercase; text-align: center; width: 100%; box-sizing: border-box;';
     } else if (valUpper === 'NÃO' || valUpper === 'NAO') {
-      cellGradientStyle = 'background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); color: #ffffff; font-weight: 900; font-size: 10px; padding: 5px 2px; border-radius: 4px; text-transform: uppercase; text-align: center; width: 100%; box-sizing: border-box;';
+      badgeStyle = 'background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); color: #ffffff; font-weight: 900; font-size: 10px; padding: 5px 2px; border-radius: 4px; text-transform: uppercase; text-align: center; width: 100%; box-sizing: border-box;';
     } else if (valUpper === 'NA' || valUpper === 'N/A') {
-      cellGradientStyle = 'background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: #ffffff; font-weight: 900; font-size: 10px; padding: 5px 2px; border-radius: 4px; text-transform: uppercase; text-align: center; width: 100%; box-sizing: border-box;';
-    } else {
-      cellGradientStyle = 'background: #f1f5f9; color: #0f172a; font-weight: 700; font-size: 9px; padding: 5px 2px; border-radius: 4px; text-align: center; width: 100%; box-sizing: border-box;';
+      badgeStyle = 'background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: #ffffff; font-weight: 900; font-size: 10px; padding: 5px 2px; border-radius: 4px; text-transform: uppercase; text-align: center; width: 100%; box-sizing: border-box;';
     }
 
-    var badgeHtml = '<div style="' + cellGradientStyle + '">' + (valStr || '-') + '</div>';
-
+    var badgeHtml = '<div style="' + badgeStyle + '">' + (qObj.value || '-') + '</div>';
     var rowBg = (q % 2 === 0) ? '#ffffff' : '#f8fafc';
+
     tableRowsHtml += '<tr style="background-color: ' + rowBg + ';">' +
-      '<td style="padding: 5px 8px; border: 1px solid #e2e8f0; font-size: 9px; font-weight: bold; color: #334155; width: 78%;">' + qKey + '</td>' +
+      '<td style="padding: 5px 8px; border: 1px solid #e2e8f0; font-size: 9px; font-weight: bold; color: #334155; width: 78%;">' + qObj.key + '</td>' +
       '<td style="padding: 3px; border: 1px solid #e2e8f0; font-size: 9px; text-align: center; width: 22%; vertical-align: middle;">' + badgeHtml + '</td>' +
     '</tr>';
   }
 
-  // 3. CAMPOS DE DESFECHO (APÓS A PERGUNTA 30)
-  var outcomeCardsHtml = '';
-  if (outcomeList.length > 0) {
-    outcomeCardsHtml += '<div style="margin-top: 20px; margin-bottom: 18px; page-break-inside: avoid;">' +
-      '<div style="font-family: Arial, sans-serif; font-size: 11px; font-weight: bold; color: #006633; text-transform: uppercase; border-left: 4px solid #006633; padding-left: 8px; margin-bottom: 10px; letter-spacing: 0.5px;">' +
-        'Desfecho e Conclusão da Avaliação' +
-      '</div>';
-
-    for (var o = 0; o < outcomeList.length; o++) {
-      var oItem = outcomeList[o];
-      outcomeCardsHtml += '<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #006633; border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; page-break-inside: avoid;">' +
-        '<div style="font-size: 9px; font-weight: 800; color: #006633; text-transform: uppercase; letter-spacing: 0.5px;">' + oItem.key + '</div>' +
-        '<div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-top: 3px; line-height: 1.4;">' + (oItem.value || 'N/A') + '</div>' +
-      '</div>';
-    }
-
-    outcomeCardsHtml += '</div>';
-  }
-
-  // 4. IMAGENS (APÓS PERGUNTA 30 / DESFECHO, SEM LEGENDA ABAIXO DAS FOTOS)
+  // Processamento das Imagens (Sem cortar ou distorcer)
   var imgBlocks = [];
   IMAGE_HEADERS.forEach(function(hdr) {
     var fileName = String(data[hdr] || '').trim();
     if (fileName) {
       var base64 = obterImagemBase64(fileName, memoryFiles, imageFolder);
-      if (base64) {
-        imgBlocks.push({ base64: base64 });
-      }
+      if (base64) imgBlocks.push({ base64: base64 });
     }
   });
 
   var imagesHtml = '';
   if (imgBlocks.length > 0) {
-    imagesHtml += '<div style="margin-top: 20px; margin-bottom: 20px; page-break-inside: avoid;">' +
-      '<div style="font-family: Arial, sans-serif; font-size: 11px; font-weight: bold; color: #006633; text-transform: uppercase; border-left: 4px solid #006633; padding-left: 8px; margin-bottom: 10px; letter-spacing: 0.5px;">Evidências e Registros Fotográficos</div>' +
+    imagesHtml += '<div style="margin-top: 18px; margin-bottom: 16px; page-break-inside: avoid;">' +
+      '<div style="font-family: Arial, sans-serif; font-size: 10px; font-weight: bold; color: #006633; text-transform: uppercase; border-left: 4px solid #006633; padding-left: 8px; margin-bottom: 10px; letter-spacing: 0.5px;">EVIDÊNCIAS E REGISTROS FOTOGRÁFICOS</div>' +
       '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="table-layout: fixed; width: 100%;">';
 
     for (var i = 0; i < imgBlocks.length; i += 2) {
       imagesHtml += '<tr>';
-      
       var b1 = imgBlocks[i];
       imagesHtml += '<td width="49%" valign="top" style="width: 49%;">' +
-        '<div style="margin-bottom: 10px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 4px; background: #ffffff; text-align: center; page-break-inside: avoid;">' +
-          '<div style="border-radius: 6px; overflow: hidden; background: #f8fafc; text-align: center; height: 180px; width: 100%;">' +
-            '<img src="' + b1.base64 + '" style="width: 100%; height: 180px; display: block; object-fit: cover; border: 0;" />' +
+        '<div style="margin-bottom: 10px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 6px; background: #ffffff; text-align: center; page-break-inside: avoid;">' +
+          '<div style="border-radius: 6px; overflow: hidden; background: #f8fafc; text-align: center; height: 180px; width: 100%; display: flex; align-items: center; justify-content: center;">' +
+            '<img src="' + b1.base64 + '" style="max-width: 100%; max-height: 180px; width: auto; height: auto; object-fit: contain; display: block; margin: 0 auto; border: 0;" />' +
           '</div>' +
         '</div>' +
       '</td>';
@@ -1378,9 +1276,9 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
         var b2 = imgBlocks[i+1];
         imagesHtml += '<td width="2%" style="width: 2%;"></td>';
         imagesHtml += '<td width="49%" valign="top" style="width: 49%;">' +
-          '<div style="margin-bottom: 10px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 4px; background: #ffffff; text-align: center; page-break-inside: avoid;">' +
-            '<div style="border-radius: 6px; overflow: hidden; background: #f8fafc; text-align: center; height: 180px; width: 100%;">' +
-              '<img src="' + b2.base64 + '" style="width: 100%; height: 180px; display: block; object-fit: cover; border: 0;" />' +
+          '<div style="margin-bottom: 10px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 6px; background: #ffffff; text-align: center; page-break-inside: avoid;">' +
+            '<div style="border-radius: 6px; overflow: hidden; background: #f8fafc; text-align: center; height: 180px; width: 100%; display: flex; align-items: center; justify-content: center;">' +
+              '<img src="' + b2.base64 + '" style="max-width: 100%; max-height: 180px; width: auto; height: auto; object-fit: contain; display: block; margin: 0 auto; border: 0;" />' +
             '</div>' +
           '</div>' +
         '</td>';
@@ -1389,82 +1287,129 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
       }
       imagesHtml += '</tr>';
     }
-
     imagesHtml += '</table></div>';
   }
 
-  // 5. LOCAL DE ASSINATURA AO FINAL DO RELATÓRIO
-  var signaturesHtml = '<div style="margin-top: 35px; margin-bottom: 15px; page-break-inside: avoid;">' +
-    '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="table-layout: fixed; width: 100%;">' +
-      '<tr>' +
-        '<td width="46%" align="center" valign="bottom">' +
-          '<div style="border-top: 1.5px solid #334155; width: 90%; margin: 0 auto 6px auto;"></div>' +
-          '<div style="font-size: 10px; font-weight: 900; color: #0f172a; text-transform: uppercase;">' + motorista + '</div>' +
-          '<div style="font-size: 8px; font-weight: bold; color: #64748b; text-transform: uppercase; margin-top: 2px;">Motorista Avaliado</div>' +
-        '</td>' +
-        '<td width="8%"></td>' +
-        '<td width="46%" align="center" valign="bottom">' +
-          '<div style="border-top: 1.5px solid #334155; width: 90%; margin: 0 auto 6px auto;"></div>' +
-          '<div style="font-size: 10px; font-weight: 900; color: #0f172a; text-transform: uppercase;">' + avaliador + '</div>' +
-          '<div style="font-size: 8px; font-weight: bold; color: #64748b; text-transform: uppercase; margin-top: 2px;">Avaliador / Supervisor</div>' +
-        '</td>' +
-      '</tr>' +
+  // 1. Tabela PLANO DE AÇÃO (3 linhas)
+  var planoAcaoHtml = '<div style="margin-top: 18px; margin-bottom: 16px; page-break-inside: avoid;">' +
+    '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%; border: 1px solid #cbd5e1;">' +
+      '<thead>' +
+        '<tr style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff;">' +
+          '<th style="padding: 6px 8px; font-size: 9px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 40%; text-align: left;">PLANO DE AÇÃO</th>' +
+          '<th style="padding: 6px 8px; font-size: 9px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 18%; text-align: center;">PRAZO</th>' +
+          '<th style="padding: 6px 8px; font-size: 9px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 18%; text-align: center;">STATUS</th>' +
+          '<th style="padding: 6px 8px; font-size: 9px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 24%; text-align: left;">RESPONSÁVEL</th>' +
+        '</tr>' +
+      '</thead>' +
+      '<tbody>' +
+        '<tr style="height: 26px;"><td style="border: 1px solid #cbd5e1; padding: 4px;">&nbsp;</td><td style="border: 1px solid #cbd5e1; padding: 4px;">&nbsp;</td><td style="border: 1px solid #cbd5e1; padding: 4px;">&nbsp;</td><td style="border: 1px solid #cbd5e1; padding: 4px;">&nbsp;</td></tr>' +
+        '<tr style="height: 26px; background-color: #f8fafc;"><td style="border: 1px solid #cbd5e1; padding: 4px;">&nbsp;</td><td style="border: 1px solid #cbd5e1; padding: 4px;">&nbsp;</td><td style="border: 1px solid #cbd5e1; padding: 4px;">&nbsp;</td><td style="border: 1px solid #cbd5e1; padding: 4px;">&nbsp;</td></tr>' +
+        '<tr style="height: 26px;"><td style="border: 1px solid #cbd5e1; padding: 4px;">&nbsp;</td><td style="border: 1px solid #cbd5e1; padding: 4px;">&nbsp;</td><td style="border: 1px solid #cbd5e1; padding: 4px;">&nbsp;</td><td style="border: 1px solid #cbd5e1; padding: 4px;">&nbsp;</td></tr>' +
+      '</tbody>' +
     '</table>' +
   '</div>';
 
-  var htmlContent = '<!DOCTYPE html>' +
-    '<html>' +
-    '<head>' +
-      '<meta charset="utf-8">' +
-      '<title>Relatório de Avaliação de Direção</title>' +
-      '<style>' +
-        '@page { size: A4; margin: 10mm 10mm 10mm 10mm; }' +
-        'body { font-family: Arial, sans-serif; color: #0f172a; background: #ffffff; margin: 0; padding: 0; }' +
-      '</style>' +
-    '</head>' +
-    '<body>' +
-      '<div style="height: 5px; background: linear-gradient(90deg, #006633 0%, #F99D1C 100%); margin-bottom: 10px; border-radius: 3px;"></div>' +
+  // 2. Card de OBSERVAÇÕES
+  var observacoesHtml = '<div style="margin-bottom: 16px; page-break-inside: avoid;">' +
+    '<div style="font-family: Arial, sans-serif; font-size: 10px; font-weight: bold; color: #006633; text-transform: uppercase; border-left: 4px solid #006633; padding-left: 8px; margin-bottom: 6px; letter-spacing: 0.5px;">OBSERVAÇÕES</div>' +
+    '<div style="background: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #006633; border-radius: 6px; padding: 8px 12px; font-size: 10px; color: #0f172a; line-height: 1.4; min-height: 28px;">' + observacaoVal + '</div>' +
+  '</div>';
 
-      '<div style="border-bottom: 2px solid #006633; padding-bottom: 8px; margin-bottom: 14px;">' +
-        '<table width="100%" border="0" cellspacing="0" cellpadding="0">' +
-          '<tr>' +
-            '<td width="65%" valign="middle" align="left">' +
-              '<h1 style="margin: 0; font-family: Arial, sans-serif; font-size: 15px; font-weight: 900; color: #006633; letter-spacing: -0.3px; text-transform: uppercase;">RISEL COMBUSTÍVEIS</h1>' +
-              '<p style="margin: 2px 0 0 0; font-family: Arial, sans-serif; font-size: 9px; font-weight: bold; color: #F99D1C; text-transform: uppercase;">SISTEMA DE MONITORAMENTO E AVALIAÇÃO DE DIREÇÃO</p>' +
-            '</td>' +
-            '<td width="35%" align="right" valign="middle" style="font-family: monospace; font-size: 8px; color: #64748b; text-align: right;">' +
-              '<div><strong>EMISSÃO:</strong> ' + dataEmissao + '</div>' +
-              '<div><strong>SISTEMA:</strong> MONITORAMENTO RISEL</div>' +
-            '</td>' +
-          '</tr>' +
-        '</table>' +
-      '</div>' +
+  // 3. Tabela de PONTOS POR HORA e RESULTADO (4 Colunas)
+  var pontosResultadoHtml = '<div style="margin-bottom: 16px; page-break-inside: avoid;">' +
+    '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%; border: 1px solid #cbd5e1;">' +
+      '<thead>' +
+        '<tr style="background-color: #006633; color: #ffffff;">' +
+          '<th style="padding: 7px 8px; font-size: 9px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 25%; text-align: center;">Pontos por Hora</th>' +
+          '<th style="padding: 7px 8px; font-size: 9px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 20%; text-align: center;">Pontuação</th>' +
+          '<th style="padding: 7px 8px; font-size: 9px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 35%; text-align: center;">Resultado Geral do Acompanhamento</th>' +
+          '<th style="padding: 7px 8px; font-size: 9px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 20%; text-align: center;">Resultado (%)</th>' +
+        '</tr>' +
+      '</thead>' +
+      '<tbody>' +
+        '<tr style="background-color: #f8fafc;">' +
+          '<td style="padding: 8px; font-size: 10px; font-weight: 700; color: #334155; text-align: center; border: 1px solid #cbd5e1;">Pontos por Hora</td>' +
+          '<td style="padding: 8px; font-size: 12px; font-weight: 900; color: #006633; text-align: center; border: 1px solid #cbd5e1;">' + pontosVal + '</td>' +
+          '<td style="padding: 8px; font-size: 10px; font-weight: 700; color: #334155; text-align: center; border: 1px solid #cbd5e1;">Resultado Geral do Acompanhamento</td>' +
+          '<td style="padding: 8px; font-size: 13px; font-weight: 900; color: #16a34a; text-align: center; border: 1px solid #cbd5e1;">' + resultadoVal + '</td>' +
+        '</tr>' +
+      '</tbody>' +
+    '</table>' +
+  '</div>';
 
-      initialCardsHtml +
+  // 4. CONVERSA DE FEEDBACK
+  var conversaFeedbackHtml = '<div style="margin-bottom: 16px; page-break-inside: avoid;">' +
+    '<div style="font-family: Arial, sans-serif; font-size: 10px; font-weight: bold; color: #006633; text-transform: uppercase; border-left: 4px solid #006633; padding-left: 8px; margin-bottom: 6px; letter-spacing: 0.5px;">CONVERSA DE FEEDBACK</div>' +
+    '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%; border: 1px solid #cbd5e1;">' +
+      '<thead>' +
+        '<tr style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff;">' +
+          '<th style="padding: 6px 8px; font-size: 9px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 18%; text-align: center;">DATA</th>' +
+          '<th style="padding: 6px 8px; font-size: 9px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 32%; text-align: left;">NOME DO GESTOR</th>' +
+          '<th style="padding: 6px 8px; font-size: 9px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 22%; text-align: left;">FUNÇÃO</th>' +
+          '<th style="padding: 6px 8px; font-size: 9px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 28%; text-align: center;">ASSINATURA</th>' +
+        '</tr>' +
+      '</thead>' +
+      '<tbody>' +
+        '<tr style="height: 36px; background-color: #ffffff;"><td style="border: 1px solid #cbd5e1; padding: 4px;">&nbsp;</td><td style="border: 1px solid #cbd5e1; padding: 4px;">&nbsp;</td><td style="border: 1px solid #cbd5e1; padding: 4px;">&nbsp;</td><td style="border: 1px solid #cbd5e1; padding: 4px;">&nbsp;</td></tr>' +
+      '</tbody>' +
+    '</table>' +
+  '</div>';
 
-      '<div style="font-family: Arial, sans-serif; font-size: 11px; font-weight: bold; color: #006633; text-transform: uppercase; border-left: 4px solid #006633; padding-left: 8px; margin-top: 10px; margin-bottom: 10px; letter-spacing: 0.5px;">' +
-        'Detalhamento dos Itens Avaliados' +
-      '</div>' +
+  // 5. DECLARAÇÃO DO MOTORISTA
+  var declaracaoMotoristaHtml = '<div style="margin-bottom: 16px; page-break-inside: avoid;">' +
+    '<div style="font-family: Arial, sans-serif; font-size: 10px; font-weight: bold; color: #334155; margin-bottom: 6px;">Declaro que recebi todas as informações acima:</div>' +
+    '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%; border: 1px solid #cbd5e1;">' +
+      '<thead>' +
+        '<tr style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff;">' +
+          '<th style="padding: 6px 8px; font-size: 9px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 50%; text-align: left;">NOME MOTORISTA</th>' +
+          '<th style="padding: 6px 8px; font-size: 9px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 50%; text-align: center;">ASSINATURA</th>' +
+        '</tr>' +
+      '</thead>' +
+      '<tbody>' +
+        '<tr style="height: 38px; background-color: #ffffff;"><td style="border: 1px solid #cbd5e1; padding: 8px; font-size: 11px; font-weight: 800; color: #0f172a; text-transform: uppercase; vertical-align: middle;">' + motorista + '</td><td style="border: 1px solid #cbd5e1; padding: 4px; vertical-align: middle;">&nbsp;</td></tr>' +
+      '</tbody>' +
+    '</table>' +
+  '</div>';
 
-      '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; margin-bottom: 14px; border: 1px solid #cbd5e1;">' +
-        '<thead>' +
-          '<tr style="background-color: #006633; color: #ffffff;">' +
-            '<th style="padding: 7px 10px; text-align: left; font-size: 9px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 78%;">Item de Avaliação</th>' +
-            '<th style="padding: 7px 10px; text-align: center; font-size: 9px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 22%;">Resultado / Resposta</th>' +
-          '</tr>' +
-        '</thead>' +
-        '<tbody>' +
-          tableRowsHtml +
-        '</tbody>' +
-      '</table>' +
+  // Montagem final do HTML do Relatório em PDF
+  var htmlContent = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Relatório de Avaliação de Direção</title><style>@page { size: A4; margin: 10mm 10mm 10mm 10mm; } body { font-family: Arial, sans-serif; color: #0f172a; background: #ffffff; margin: 0; padding: 0; }</style></head><body>' +
+    '<div style="height: 5px; background: linear-gradient(90deg, #006633 0%, #F99D1C 100%); margin-bottom: 10px; border-radius: 3px;"></div>' +
+    '<div style="border-bottom: 2px solid #006633; padding-bottom: 8px; margin-bottom: 14px;">' +
+      '<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr>' +
+        '<td width="65%" valign="middle" align="left"><h1 style="margin: 0; font-family: Arial, sans-serif; font-size: 15px; font-weight: 900; color: #006633; letter-spacing: -0.3px; text-transform: uppercase;">RISEL COMBUSTÍVEIS</h1><p style="margin: 2px 0 0 0; font-family: Arial, sans-serif; font-size: 9px; font-weight: bold; color: #F99D1C; text-transform: uppercase;">SISTEMA DE MONITORAMENTO E AVALIAÇÃO DE DIREÇÃO</p></td>' +
+        '<td width="35%" align="right" valign="middle" style="font-family: monospace; font-size: 8px; color: #64748b; text-align: right;"><div><strong>EMISSÃO:</strong> ' + dataEmissao + '</div><div><strong>SISTEMA:</strong> MONITORAMENTO RISEL</div></td>' +
+      '</tr></table>' +
+    '</div>' +
 
-      outcomeCardsHtml +
+    // Informações Iniciais Antes das Perguntas
+    '<div style="margin-bottom: 14px;">' +
+      '<div style="background-color: #f8fafc; border: 1.5px solid #006633; border-radius: 6px; padding: 6px 10px; margin-bottom: 6px;"><span style="font-size: 8px; color: #006633; font-weight: bold; text-transform: uppercase;">👤 MOTORISTA</span><div style="font-size: 11px; font-weight: 800; color: #0f172a; margin-top: 2px; text-transform: uppercase;">' + motorista + '</div></div>' +
+      '<div style="background-color: #f8fafc; border: 1.5px solid #006633; border-radius: 6px; padding: 6px 10px; margin-bottom: 10px;"><span style="font-size: 8px; color: #006633; font-weight: bold; text-transform: uppercase;">📋 AVALIADOR</span><div style="font-size: 11px; font-weight: 800; color: #0f172a; margin-top: 2px; text-transform: uppercase;">' + avaliador + '</div></div>' +
+      '<div style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); color: #ffffff; font-family: Arial, sans-serif; font-size: 10px; font-weight: 800; text-transform: uppercase; padding: 7px 12px; border-radius: 6px; text-align: center; letter-spacing: 0.5px; margin-bottom: 6px;">INFORMAÇÕES DA DESCARGA</div>' +
+      '<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; margin-bottom: 5px;"><span style="font-size: 8px; color: #475569; font-weight: bold; text-transform: uppercase;">🏢 TRANSPORTADORA</span><div style="font-size: 10px; font-weight: 700; color: #0f172a; margin-top: 1px; text-transform: uppercase;">' + transportadora + '</div></div>' +
+      '<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; margin-bottom: 5px;"><span style="font-size: 8px; color: #475569; font-weight: bold; text-transform: uppercase;">🚛 FROTA</span><div style="font-size: 10px; font-weight: 700; color: #0f172a; margin-top: 1px; text-transform: uppercase;">' + frota + '</div></div>' +
+      '<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; margin-bottom: 5px;"><span style="font-size: 8px; color: #475569; font-weight: bold; text-transform: uppercase;">📅 DATA DA AVALIAÇÃO</span><div style="font-size: 10px; font-weight: 700; color: #0f172a; margin-top: 1px; text-transform: uppercase;">' + dataAval + '</div></div>' +
+      '<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; margin-bottom: 6px;"><span style="font-size: 8px; color: #475569; font-weight: bold; text-transform: uppercase;">🗺️ LOCAL / TRECHO</span><div style="font-size: 10px; font-weight: 700; color: #0f172a; margin-top: 1px; text-transform: uppercase;">' + localTrecho + '</div></div>' +
+    '</div>' +
 
-      imagesHtml +
+    // Tabela de Perguntas 1 a 30
+    '<div style="font-family: Arial, sans-serif; font-size: 11px; font-weight: bold; color: #006633; text-transform: uppercase; border-left: 4px solid #006633; padding-left: 8px; margin-top: 10px; margin-bottom: 10px; letter-spacing: 0.5px;">Detalhamento dos Itens Avaliados</div>' +
+    '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; margin-bottom: 14px; border: 1px solid #cbd5e1;">' +
+      '<thead><tr style="background-color: #006633; color: #ffffff;"><th style="padding: 7px 10px; text-align: left; font-size: 9px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 78%;">Item de Avaliação</th><th style="padding: 7px 10px; text-align: center; font-size: 9px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; width: 22%;">Resultado / Resposta</th></tr></thead>' +
+      '<tbody>' + tableRowsHtml + '</tbody>' +
+    '</table>' +
 
-      signaturesHtml +
-    '</body>' +
-    '</html>';
+    // Imagens
+    imagesHtml +
+
+    // Tabela Plano de Ação, Observações, Pontos/Resultado, Feedback e Declaração
+    planoAcaoHtml +
+    observacoesHtml +
+    pontosResultadoHtml +
+    conversaFeedbackHtml +
+    declaracaoMotoristaHtml +
+
+    '</body></html>';
 
   var htmlOutput = HtmlService.createHtmlOutput(htmlContent);
   var motoristaClean = motorista.replace(/[^a-zA-Z0-9]/g, '_');
@@ -1592,43 +1537,85 @@ function criarDocumentoRelatorioDinamico(tituloDoc, data, outputFolder, memoryFi
 }
 
 function getHtmlEmailBody(d) {
+  var motorista = d.motorista || 'N/A';
+  var avaliador = d.avaliador || 'N/A';
+  var transportadora = d.transportadora || 'RISEL COMBUSTÍVEIS';
+  var frota = d.frota || 'N/A';
+  var dataAval = d.dataAval || 'N/A';
+  var local = d.local || 'N/A';
+  var resultado = d.resultado || '100%';
+  var pontos = d.pontos || '0';
+  var obs = d.observacao || 'Sem observações registradas.';
+
   return `
-    <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 500px; margin: 0 auto; background-color: #f4f7f6; padding: 15px;">
-      <div style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05); border: 1px solid #e0e0e0;">
-        <div style="background-color: ${COR_RISEL_VERDE}; padding: 15px; text-align: center;">
-          <h1 style="color: #ffffff; margin: 0; font-size: 16px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;">Avaliação de Direção</h1>
-          <p style="color: #a8d5ba; margin: 2px 0 0 0; font-size: 9px; font-weight: 600; text-transform: uppercase;">Monitoramento Risel Combustíveis</p>
+    <div style="font-family: 'Aptos Narrow', 'Arial Narrow', 'Segoe UI', Arial, sans-serif; max-width: 580px; margin: 0 auto; background-color: #f4f7f6; padding: 20px;">
+      <div style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.06); border: 1px solid #e0e0e0;">
+        <!-- Header -->
+        <div style="background: linear-gradient(90deg, #006633 0%, #004d26 100%); padding: 18px; text-align: center;">
+          <h1 style="color: #ffffff; margin: 0; font-size: 18px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px; font-family: 'Aptos Narrow', 'Arial Narrow', sans-serif;">Avaliação de Direção</h1>
+          <p style="color: #a8d5ba; margin: 3px 0 0 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Sistema de Monitoramento Risel Combustíveis</p>
         </div>
-        <div style="padding: 20px;">
-          <table style="width: 100%; border-collapse: collapse;">
+
+        <div style="padding: 22px;">
+          <!-- Informações em Cards Informativos -->
+          <table style="width: 100%; border-collapse: separate; border-spacing: 0 8px; margin-bottom: 15px;">
             <tr>
-              <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">
-                <div style="font-size: 9px; color: #999; text-transform: uppercase; font-weight: 700;">👤 Motorista</div>
-                <div style="font-size: 13px; color: #333; font-weight: 700;">${d.motorista}</div>
-              </td>
-              <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0; text-align: right;">
-                <div style="font-size: 9px; color: #999; text-transform: uppercase; font-weight: 700;">📅 Data</div>
-                <div style="font-size: 13px; color: #333; font-weight: 700;">${d.dataAval}</div>
+              <td style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #006633; border-radius: 6px; padding: 8px 12px;">
+                <div style="font-size: 9px; color: #006633; text-transform: uppercase; font-weight: 800; font-family: 'Aptos Narrow', sans-serif;">👤 MOTORISTA</div>
+                <div style="font-size: 13px; color: #0f172a; font-weight: 800; text-transform: uppercase; margin-top: 1px;">${motorista}</div>
               </td>
             </tr>
             <tr>
-              <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">
-                <div style="font-size: 9px; color: #999; text-transform: uppercase; font-weight: 700;">🚛 Frota</div>
-                <div style="font-size: 13px; color: #333; font-weight: 700;">${d.frota}</div>
+              <td style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #006633; border-radius: 6px; padding: 8px 12px;">
+                <div style="font-size: 9px; color: #006633; text-transform: uppercase; font-weight: 800; font-family: 'Aptos Narrow', sans-serif;">📋 AVALIADOR</div>
+                <div style="font-size: 13px; color: #0f172a; font-weight: 800; text-transform: uppercase; margin-top: 1px;">${avaliador}</div>
               </td>
-              <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0; text-align: right;">
-                <div style="font-size: 9px; color: #999; text-transform: uppercase; font-weight: 700;">📋 Avaliador</div>
-                <div style="font-size: 13px; color: #333; font-weight: 700;">${d.avaliador}</div>
+            </tr>
+            <tr>
+              <td style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #006633; border-radius: 6px; padding: 8px 12px;">
+                <div style="font-size: 9px; color: #006633; text-transform: uppercase; font-weight: 800; font-family: 'Aptos Narrow', sans-serif;">🏢 TRANSPORTADORA</div>
+                <div style="font-size: 12px; color: #0f172a; font-weight: 700; text-transform: uppercase; margin-top: 1px;">${transportadora}</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #006633; border-radius: 6px; padding: 8px 12px;">
+                <div style="font-size: 9px; color: #006633; text-transform: uppercase; font-weight: 800; font-family: 'Aptos Narrow', sans-serif;">🚛 FROTA</div>
+                <div style="font-size: 12px; color: #0f172a; font-weight: 700; text-transform: uppercase; margin-top: 1px;">${frota}</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #006633; border-radius: 6px; padding: 8px 12px;">
+                <div style="font-size: 9px; color: #006633; text-transform: uppercase; font-weight: 800; font-family: 'Aptos Narrow', sans-serif;">📅 DATA DA AVALIAÇÃO</div>
+                <div style="font-size: 12px; color: #0f172a; font-weight: 700; text-transform: uppercase; margin-top: 1px;">${dataAval}</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #006633; border-radius: 6px; padding: 8px 12px;">
+                <div style="font-size: 9px; color: #006633; text-transform: uppercase; font-weight: 800; font-family: 'Aptos Narrow', sans-serif;">🗺️ LOCAL / TRECHO</div>
+                <div style="font-size: 12px; color: #0f172a; font-weight: 700; text-transform: uppercase; margin-top: 1px;">${local}</div>
               </td>
             </tr>
           </table>
-          <div style="margin-top: 20px; background-color: #fff9f0; border: 1px solid ${COR_RISEL_LARANJA}; border-radius: 8px; padding: 12px; text-align: center;">
-            <div style="font-size: 10px; color: ${COR_RISEL_LARANJA}; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;">Resultado Geral</div>
-            <div style="font-size: 28px; color: ${COR_RISEL_VERDE}; font-weight: 900; margin: 2px 0;">${d.resultado}</div>
+
+          <!-- Card do Resultado Geral & Pontos -->
+          <div style="margin-top: 18px; background-color: #f0fdf4; border: 1.5px solid #16a34a; border-radius: 10px; padding: 14px; text-align: center;">
+            <div style="font-size: 10px; color: #15803d; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;">RESULTADO GERAL DO ACOMPANHAMENTO</div>
+            <div style="font-size: 32px; color: #006633; font-weight: 900; margin: 4px 0;">${resultado}</div>
+            <div style="font-size: 11px; color: #334155; font-weight: 700; margin-top: 4px;">Pontos por Hora: <span style="color: #006633; font-weight: 900;">${pontos}</span></div>
+          </div>
+
+          <!-- Observações -->
+          <div style="margin-top: 18px;">
+            <div style="font-size: 10px; color: #006633; text-transform: uppercase; font-weight: 800; margin-bottom: 4px;">💬 OBSERVAÇÕES DO ACOMPANHAMENTO</div>
+            <div style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 12px; font-size: 11px; color: #334155; line-height: 1.4;">
+              ${obs}
+            </div>
           </div>
         </div>
-        <div style="background-color: #f9f9f9; padding: 10px; text-align: center; border-top: 1px solid #eeeeee;">
-          <p style="font-size: 8px; color: #aaaaaa; margin: 0; text-transform: uppercase; font-weight: 600;">Documento gerado automaticamente pelo CRM Risel.</p>
+
+        <!-- Rodapé -->
+        <div style="background-color: #f9f9f9; padding: 12px; text-align: center; border-top: 1px solid #eeeeee;">
+          <p style="font-size: 9px; color: #888888; margin: 0; text-transform: uppercase; font-weight: 700;">Sistema de Monitoramento Risel Combustíveis — Notificação Automática</p>
         </div>
       </div>
     </div>`;
