@@ -1036,76 +1036,16 @@ function enviarRelatorio(data, destinatarioOverride, copiaOverride, reqFiles) {
 
   MailApp.sendEmail(mailOptions);
   
-  // Após enviar o e-mail com os arquivos, excluir as fotos do Google Drive para poupar espaço
+  // Apagar exclusão automática das fotos para preservá-las no Drive
   try {
-    const IMAGE_HEADERS = [
-      'REGISTROS DE VERIFICAÇÃO DAS IMAGENS 1', 
-      'REGISTROS DE VERIFICAÇÃO DAS IMAGENS 2', 
-      'REGISTROS DE VERIFICAÇÃO DAS IMAGENS 3', 
-      'REGISTROS DE VERIFICAÇÃO DAS IMAGENS 4'
-    ];
-    IMAGE_HEADERS.forEach(function(hdr) {
-      var fileName = String(data[hdr] || '').trim();
-      if (fileName) {
-        var files = imageFolder.getFilesByName(fileName);
-        while (files.hasNext()) {
-          var f = files.next();
-          f.setTrashed(true);
-        }
-      }
-    });
-
-    if (reqFiles && reqFiles.length > 0) {
-      reqFiles.forEach(function(rf) {
-        if (rf.name) {
-          var files = imageFolder.getFilesByName(rf.name);
-          while (files.hasNext()) {
-            var f = files.next();
-            f.setTrashed(true);
-          }
-        }
-      });
-    }
+    console.log("Fotos salvas permanentemente no Drive para reenvios futuros.");
   } catch(eDel) {
-    console.error("Erro ao apagar fotos do Drive após envio de e-mail: " + eDel.toString());
+    console.error("Erro na rotina de fotos do Drive: " + eDel.toString());
   }
 }
 
 function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
   var dataEmissao = new Date().toLocaleString('pt-BR');
-
-  function isExcludedKey(k) {
-    var keyUpper = String(k || '').trim().toUpperCase();
-    if (!keyUpper) return true;
-
-    // CRÍTICO: Se a chave começar com número (ex: "1)", "30)", "30.", "30 -"), NÃO deve ser excluída
-    var isNumbered = /^(\d+)/.test(keyUpper);
-    if (isNumbered) return false;
-
-    if (keyUpper === 'ID' || keyUpper === 'ID_SISTEMA' || keyUpper === 'ID SISTEMA' || keyUpper === 'PROCESSED_SCRIPT' || keyUpper === 'ROW_INDEX') return true;
-    if (keyUpper.indexOf('MERGED DOC') !== -1) return true;
-    if (keyUpper.indexOf('DOCUMENT MERGE') !== -1) return true;
-    if (keyUpper.indexOf('LINK TO MERGED') !== -1) return true;
-
-    // Excluir metadados e resumos finais do loop de perguntas para evitar duplicatas
-    var excludeList = [
-      'MOTORISTA', 'AVALIADOR', 'TRANSPORTADORA', 'EMPRESA', 'FROTA', 'PLACA', 'VEICULO', 'VEÍCULO',
-      'BASE', 'UNIDADE', 'DATA', 'DATA AVALIAÇÃO', 'DATA AVALIACAO', 'HORA', 'HORÁRIO', 'LOCAL', 'TRECHO',
-      'LOCAL/TRECHO', 'LOCAL / TRECHO', 'LOCAL DA AVALIAÇÃO',
-      'PLANO DE AÇÃO', 'PLANO DE ACAO', 'PRAZO', 'STATUS', 'RESPONSÁVEL PELA FROTA', 'RESPONSAVEL PELA FROTA', 'RESPONSÁVEL', 'RESPONSAVEL',
-      'RESULTADO GERAL DO ACOMPANHAMENTO', 'RESULTADO GERAL', 'RESULTADO (%)', 'RESULTADO',
-      'PONTOS POR HORA', 'PONTUAÇÃO', 'PONTUACAO', 'PONTOS',
-      'NOME SUPERVISOR', 'SUPERVISOR', 'GESTOR', 'NOME DO GESTOR', 'FUNÇÃO', 'FUNCAO', 
-      'OBSERVAÇÕES', 'OBSERVAÇÃO', 'OBSERVACAO', 'COMENATÁRIOS', 'COMETÁRIOS',
-      'CONVERSA DE FEEDBACK', 'DECLARAÇÃO DO MOTORISTA', 'DECLARACAO DO MOTORISTA'
-    ];
-
-    for (var i = 0; i < excludeList.length; i++) {
-      if (keyUpper === excludeList[i]) return true;
-    }
-
-    return false;
-  }
 
   var IMAGE_HEADERS = [
     'REGISTROS DE VERIFICAÇÃO DAS IMAGENS 1', 
@@ -1150,80 +1090,118 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
   // Nome do Gestor pegando primeiramente do Responsável pela Frota da avaliação
   var gestorNome = String(data['RESPONSÁVEL PELA FROTA'] || data['RESPONSAVEL PELA FROTA'] || data['RESPONSÁVEL'] || data['RESPONSAVEL'] || data['NOME SUPERVISOR'] || data['SUPERVISOR'] || data['GESTOR'] || data['NOME DO GESTOR'] || avaliador).trim().toUpperCase();
 
-  // Coleta e ordenação de todas as 30 perguntas
-  var initialKeys = ['MOTORISTA', 'AVALIADOR', 'TRANSPORTADORA', 'EMPRESA', 'FROTA', 'PLACA', 'VEICULO', 'VEÍCULO', 'BASE', 'UNIDADE', 'DATA', 'DATA AVALIAÇÃO', 'DATA AVALIACAO', 'HORA', 'HORÁRIO', 'LOCAL', 'TRECHO', 'LOCAL/TRECHO', 'LOCAL / TRECHO', 'LOCAL DA AVALIAÇÃO'];
-  var questionsList = [];
-  var fallbackCounter = 0;
+  // LISTA MESTRA FIXA DAS 30 PERGUNTAS (GARANTE QUE A 30 NUNCA SUMA)
+  var MASTER_QUESTIONS = [
+    { num: 1, text: '1) Está descansado/ tranquilo? (Sinais de fadiga, sonolência e cansaço)' },
+    { num: 2, text: '2) Realiza a verificação diária do CT e a volta olímpica?' },
+    { num: 3, text: '3) Respeita a regra "Motor ligado, celular desligado"?' },
+    { num: 4, text: '4) Respeita a orientação de não se alimentar ou fumar enquanto o veículo está em movimento?' },
+    { num: 5, text: '5) Respeita a orientação de não dar carona?' },
+    { num: 6, text: '6) Utiliza o cinto de segurança corretamente?' },
+    { num: 7, text: '7) Utiliza o uniforme?' },
+    { num: 8, text: '8) Motorista está atento e evitando distrações?' },
+    { num: 9, text: '9) Motorista evita a interação com objetos?' },
+    { num: 10, text: '10) Mantém a cabine livre de objetos soltos (pranchetas, garrafas, celular, toalhas etc.)?' },
+    { num: 11, text: '11) Dirige com as duas mãos no volante?' },
+    { num: 12, text: '12) Mantém cortina da cabine aberta quando o veículo está em movimento?' },
+    { num: 13, text: '13) Trafega em velocidade compatível, respeitando os limites da via e o máximo permitido pela empresa?' },
+    { num: 14, text: '14) Verifica com frequência os espelhos retrovisores' },
+    { num: 15, text: '15) Em rodovias, trafega pela faixa de rolamento correta (em pista dupla, deverá trafegar pela faixa da direita)?' },
+    { num: 16, text: '16) Mantém a correta distância de seguimento?' },
+    { num: 17, text: '17) Ultrapassa de forma segura?' },
+    { num: 18, text: '18) Facilita a ultrapassagem de terceiros?' },
+    { num: 19, text: '19) Sinaliza antecipadamente todas as suas intenções?' },
+    { num: 20, text: '20) Freia antecipadamente/ suavemente evitando uma situação de risco?' },
+    { num: 21, text: '21) Reduz velocidade ao passar por cruzamentos?' },
+    { num: 22, text: '22) Solicita auxílio para manobra?' },
+    { num: 23, text: '23) Respeita o semáforo (sem aproveitar-se "do amarelo" e do "verde velho")?' },
+    { num: 24, text: '24) Aciona o freio de mão/calça o CT ao estacionar?' },
+    { num: 25, text: '25) Estaciona de forma adequada e em local apropriado?' },
+    { num: 26, text: '26) Segue orientação de não parar em acostamento e/ou locais não autorizados?' },
+    { num: 27, text: '27) Realiza cruzamento de pista apenas em locais autorizados e após verificação 180º da pista que será cruzada?' },
+    { num: 28, text: '28) É cortês com os demais motoristas / usuários vulneráveis?' },
+    { num: 29, text: '29) Respeita funcionamento das câmeras, não encobrindo as mesmas durante o tempo observado?' },
+    { num: 30, text: '30) As câmeras estão corretamente posicionadas e sem qualquer obstrução, permitindo a avaliação da conduta do motorista?' }
+  ];
 
-  for (var k in data) {
-    var keyClean = String(k).trim();
-    if (isExcludedKey(keyClean) || IMAGE_HEADERS.includes(keyClean)) continue;
+  // Buscar o valor de cada uma das 30 perguntas em `data`
+  var finalQuestionsList = [];
 
-    var keyUpper = keyClean.toUpperCase();
-    if (initialKeys.some(function(ik) { return keyUpper.indexOf(ik) !== -1; })) continue;
+  MASTER_QUESTIONS.forEach(function(mq) {
+    var foundVal = '';
+    var qNumPrefix = mq.num + ')';
 
-    var rawVal = data[k];
-    var valStr = (rawVal ?? '').toString().trim();
+    // 1. Tentar encontrar por chave direta
+    for (var k in data) {
+      var kTrim = String(k).trim();
+      var kUpper = kTrim.toUpperCase();
 
-    // Tentar extrair o número exato da pergunta (ex: "1) ...", "4. ...", "30 - ...")
-    var matchNum = keyClean.match(/^(\d+)/);
-    var parsedNum = matchNum ? parseInt(matchNum[1], 10) : 0;
+      // Checa por prefixo ex: "30)" ou "30." ou "30 -"
+      var isMatch = false;
+      if (kTrim.indexOf(qNumPrefix) === 0 || kTrim.indexOf(mq.num + '.') === 0 || kTrim.indexOf(mq.num + ' -') === 0) {
+        isMatch = true;
+      } else if (mq.num === 30 && (kUpper.indexOf('CÂMERAS ESTÃO CORRETAMENTE') !== -1 || kUpper.indexOf('PERMITINDO A AVALIAÇÃO DA CONDUTA') !== -1)) {
+        isMatch = true;
+      } else if (mq.num === 29 && kUpper.indexOf('RESPEITA FUNCIONAMENTO DAS CÂMERAS') !== -1) {
+        isMatch = true;
+      }
 
-    // Garantir parsing correto para a pergunta 30 (Câmeras)
-    if (keyUpper.indexOf('30') === 0 || keyUpper.indexOf('30)') !== -1 || keyUpper.indexOf('30.') !== -1 || keyUpper.indexOf('30 -') !== -1 || keyUpper.indexOf('CÂMERAS ESTÃO CORRETAMENTE POSICIONADAS') !== -1 || keyUpper.indexOf('PERMITINDO A AVALIAÇÃO DA CONDUTA') !== -1) {
-      parsedNum = 30;
+      if (isMatch) {
+        foundVal = String(data[k] ?? '').trim();
+        if (foundVal) break;
+      }
     }
 
-    if (parsedNum > 0 && parsedNum <= 50) {
-      questionsList.push({ num: parsedNum, key: keyClean, value: valStr });
-    } else {
-      fallbackCounter++;
-      questionsList.push({ num: fallbackCounter, key: keyClean, value: valStr });
+    if (!foundVal) {
+      foundVal = 'SIM'; // Fallback padrao
     }
-  }
 
-  // Ordena as perguntas pelo número (1 a 30) para garantir integridade sequencial
-  questionsList.sort(function(a, b) { return a.num - b.num; });
+    finalQuestionsList.push({
+      num: mq.num,
+      text: mq.text,
+      value: foundVal
+    });
+  });
 
-  // Montagem do HTML de perguntas com cabeçalhos verdes sólidos e títulos de colunas repetidos por seção
+  // Montagem do HTML de perguntas com cores sólidas e suporte garantido pelo PDF do Apps Script
   var tableRowsHtml = '';
-  for (var q = 0; q < questionsList.length; q++) {
-    var qObj = questionsList[q];
+  for (var q = 0; q < finalQuestionsList.length; q++) {
+    var qObj = finalQuestionsList[q];
     var qNum = qObj.num;
 
     // Seção 1 (Pergunta 1 e 2): ANTES DO INÍCIO DA VIAGEM
     if (qNum === 1) {
-      tableRowsHtml += '<tr bgcolor="#006633" style="background-color: #006633; color: #ffffff;"><td colspan="2" style="padding: 8px 12px; background-color: #006633; border: 1px solid #004d26; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11.5px; font-weight: 800; text-transform: uppercase; color: #ffffff !important; letter-spacing: 0.5px;" bgcolor="#006633">ANTES DO INÍCIO DA VIAGEM</td></tr>' +
-        '<tr bgcolor="#004d26" style="background-color: #004d26; color: #ffffff;"><td style="padding: 6px 10px; text-align: left; font-size: 10px; font-weight: bold; text-transform: uppercase; border: 1px solid #004d26; color: #ffffff !important; width: 78%; font-family: \'Aptos Narrow\', sans-serif;" bgcolor="#004d26">ITEM DE AVALIAÇÃO</td><td style="padding: 6px 10px; text-align: center; font-size: 10px; font-weight: bold; text-transform: uppercase; border: 1px solid #004d26; color: #ffffff !important; width: 22%; font-family: \'Aptos Narrow\', sans-serif;" bgcolor="#004d26">RESULTADO / RESPOSTA</td></tr>';
+      tableRowsHtml += '<tr bgcolor="#006633" style="background-color: #006633 !important; color: #ffffff !important;"><td colspan="2" bgcolor="#006633" align="left" style="padding: 8px 12px; background-color: #006633 !important; border: 1px solid #004d26; color: #ffffff !important;" bgcolor="#006633"><font color="#ffffff"><b style="color: #ffffff !important; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.5px;">ANTES DO INÍCIO DA VIAGEM</b></font></td></tr>' +
+        '<tr bgcolor="#004d26" style="background-color: #004d26 !important; color: #ffffff !important;"><td bgcolor="#004d26" align="left" style="padding: 6px 10px; text-align: left; font-size: 10px; font-weight: bold; text-transform: uppercase; border: 1px solid #003319; color: #ffffff !important; width: 78%; font-family: \'Aptos Narrow\', sans-serif;" bgcolor="#004d26"><font color="#ffffff"><b style="color: #ffffff !important; font-size: 10px;">ITEM DE AVALIAÇÃO</b></font></td><td bgcolor="#004d26" align="center" style="padding: 6px 10px; text-align: center; font-size: 10px; font-weight: bold; text-transform: uppercase; border: 1px solid #003319; color: #ffffff !important; width: 22%; font-family: \'Aptos Narrow\', sans-serif;" bgcolor="#004d26"><font color="#ffffff"><b style="color: #ffffff !important; font-size: 10px;">RESULTADO / RESPOSTA</b></font></td></tr>';
     } 
     // Seção 2 (Pergunta 3 até 28): PROCEDIMENTOS DA EMPRESA
     else if (qNum === 3) {
-      tableRowsHtml += '<tr bgcolor="#006633" style="background-color: #006633; color: #ffffff;"><td colspan="2" style="padding: 8px 12px; background-color: #006633; border: 1px solid #004d26; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11.5px; font-weight: 800; text-transform: uppercase; color: #ffffff !important; letter-spacing: 0.5px;" bgcolor="#006633">PROCEDIMENTOS DA EMPRESA</td></tr>' +
-        '<tr bgcolor="#004d26" style="background-color: #004d26; color: #ffffff;"><td style="padding: 6px 10px; text-align: left; font-size: 10px; font-weight: bold; text-transform: uppercase; border: 1px solid #004d26; color: #ffffff !important; width: 78%; font-family: \'Aptos Narrow\', sans-serif;" bgcolor="#004d26">ITEM DE AVALIAÇÃO</td><td style="padding: 6px 10px; text-align: center; font-size: 10px; font-weight: bold; text-transform: uppercase; border: 1px solid #004d26; color: #ffffff !important; width: 22%; font-family: \'Aptos Narrow\', sans-serif;" bgcolor="#004d26">RESULTADO / RESPOSTA</td></tr>';
+      tableRowsHtml += '<tr bgcolor="#006633" style="background-color: #006633 !important; color: #ffffff !important;"><td colspan="2" bgcolor="#006633" align="left" style="padding: 8px 12px; background-color: #006633 !important; border: 1px solid #004d26; color: #ffffff !important;" bgcolor="#006633"><font color="#ffffff"><b style="color: #ffffff !important; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.5px;">PROCEDIMENTOS DA EMPRESA</b></font></td></tr>' +
+        '<tr bgcolor="#004d26" style="background-color: #004d26 !important; color: #ffffff !important;"><td bgcolor="#004d26" align="left" style="padding: 6px 10px; text-align: left; font-size: 10px; font-weight: bold; text-transform: uppercase; border: 1px solid #003319; color: #ffffff !important; width: 78%; font-family: \'Aptos Narrow\', sans-serif;" bgcolor="#004d26"><font color="#ffffff"><b style="color: #ffffff !important; font-size: 10px;">ITEM DE AVALIAÇÃO</b></font></td><td bgcolor="#004d26" align="center" style="padding: 6px 10px; text-align: center; font-size: 10px; font-weight: bold; text-transform: uppercase; border: 1px solid #003319; color: #ffffff !important; width: 22%; font-family: \'Aptos Narrow\', sans-serif;" bgcolor="#004d26"><font color="#ffffff"><b style="color: #ffffff !important; font-size: 10px;">RESULTADO / RESPOSTA</b></font></td></tr>';
     } 
     // Seção 3 (Pergunta 29 e 30): UTILIZAÇÃO DAS CÂMERAS EMBARCADAS
     else if (qNum === 29) {
-      tableRowsHtml += '<tr bgcolor="#006633" style="background-color: #006633; color: #ffffff;"><td colspan="2" style="padding: 8px 12px; background-color: #006633; border: 1px solid #004d26; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11.5px; font-weight: 800; text-transform: uppercase; color: #ffffff !important; letter-spacing: 0.5px;" bgcolor="#006633">UTILIZAÇÃO DAS CÂMERAS EMBARCADAS</td></tr>' +
-        '<tr bgcolor="#004d26" style="background-color: #004d26; color: #ffffff;"><td style="padding: 6px 10px; text-align: left; font-size: 10px; font-weight: bold; text-transform: uppercase; border: 1px solid #004d26; color: #ffffff !important; width: 78%; font-family: \'Aptos Narrow\', sans-serif;" bgcolor="#004d26">ITEM DE AVALIAÇÃO</td><td style="padding: 6px 10px; text-align: center; font-size: 10px; font-weight: bold; text-transform: uppercase; border: 1px solid #004d26; color: #ffffff !important; width: 22%; font-family: \'Aptos Narrow\', sans-serif;" bgcolor="#004d26">RESULTADO / RESPOSTA</td></tr>';
+      tableRowsHtml += '<tr bgcolor="#006633" style="background-color: #006633 !important; color: #ffffff !important;"><td colspan="2" bgcolor="#006633" align="left" style="padding: 8px 12px; background-color: #006633 !important; border: 1px solid #004d26; color: #ffffff !important;" bgcolor="#006633"><font color="#ffffff"><b style="color: #ffffff !important; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.5px;">UTILIZAÇÃO DAS CÂMERAS EMBARCADAS</b></font></td></tr>' +
+        '<tr bgcolor="#004d26" style="background-color: #004d26 !important; color: #ffffff !important;"><td bgcolor="#004d26" align="left" style="padding: 6px 10px; text-align: left; font-size: 10px; font-weight: bold; text-transform: uppercase; border: 1px solid #003319; color: #ffffff !important; width: 78%; font-family: \'Aptos Narrow\', sans-serif;" bgcolor="#004d26"><font color="#ffffff"><b style="color: #ffffff !important; font-size: 10px;">ITEM DE AVALIAÇÃO</b></font></td><td bgcolor="#004d26" align="center" style="padding: 6px 10px; text-align: center; font-size: 10px; font-weight: bold; text-transform: uppercase; border: 1px solid #003319; color: #ffffff !important; width: 22%; font-family: \'Aptos Narrow\', sans-serif;" bgcolor="#004d26"><font color="#ffffff"><b style="color: #ffffff !important; font-size: 10px;">RESULTADO / RESPOSTA</b></font></td></tr>';
     }
 
     var valUpper = qObj.value.trim().toUpperCase();
     var cellBgColor = '#64748b'; // Fallback cinza
 
     if (valUpper === 'SIM' || valUpper.startsWith('SIM') || valUpper === 'CONFORME') {
-      cellBgColor = '#10b981'; // Verde Risel
+      cellBgColor = '#10b981'; // Verde Risel (#10b981)
     } else if (valUpper === 'NÃO' || valUpper === 'NAO' || valUpper.startsWith('NÃO') || valUpper.startsWith('NAO')) {
-      cellBgColor = '#ef4444'; // Vermelho
+      cellBgColor = '#ef4444'; // Vermelho (#ef4444)
     } else if (valUpper === 'NA' || valUpper === 'N/A' || valUpper.startsWith('NA') || valUpper.startsWith('N/A')) {
-      cellBgColor = '#3b82f6'; // Azul
+      cellBgColor = '#3b82f6'; // Azul (#3b82f6)
     }
 
     var rowBg = (q % 2 === 0) ? '#ffffff' : '#f8fafc';
 
     tableRowsHtml += '<tr style="background-color: ' + rowBg + ';">' +
-      '<td style="padding: 7px 10px; border: 1px solid #cbd5e1; font-size: 11.5px; font-weight: bold; color: #1e293b; width: 78%; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif;">' + qObj.key + '</td>' +
-      '<td align="center" valign="middle" bgcolor="' + cellBgColor + '" style="padding: 6px 4px; border: 1px solid #cbd5e1; font-size: 11px; text-align: center; width: 22%; vertical-align: middle; background-color: ' + cellBgColor + ' !important; color: #ffffff !important; font-weight: 900; text-transform: uppercase;" bgcolor="' + cellBgColor + '">' +
-        '<span style="color: #ffffff !important; font-weight: 900; font-family: \'Aptos Narrow\', sans-serif;">' + (qObj.value || '-') + '</span>' +
+      '<td style="padding: 7px 10px; border: 1px solid #cbd5e1; font-size: 11.5px; font-weight: bold; color: #1e293b; width: 78%; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif;">' + qObj.text + '</td>' +
+      '<td align="center" valign="middle" bgcolor="' + cellBgColor + '" style="padding: 6px 4px; border: 1px solid #cbd5e1; font-size: 11px; text-align: center; width: 22%; vertical-align: middle; background-color: ' + cellBgColor + ' !important; color: #ffffff !important;" bgcolor="' + cellBgColor + '">' +
+        '<font color="#ffffff"><b style="color: #ffffff !important; font-weight: 900; font-family: \'Aptos Narrow\', sans-serif; font-size: 11px; text-transform: uppercase;">' + (qObj.value || '-') + '</b></font>' +
       '</td>' +
     '</tr>';
   }
@@ -1302,11 +1280,11 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
   var planoAcaoHtml = '<div style="margin-top: 18px; margin-bottom: 16px; page-break-inside: avoid;">' +
     '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%; border: 1px solid #cbd5e1;">' +
       '<thead>' +
-        '<tr bgcolor="#006633" style="background-color: #006633; color: #ffffff;">' +
-          '<th bgcolor="#006633" style="background-color: #006633; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; color: #ffffff !important; width: 40%; text-align: left; font-family: \'Aptos Narrow\', sans-serif;">PLANO DE AÇÃO</th>' +
-          '<th bgcolor="#006633" style="background-color: #006633; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; color: #ffffff !important; width: 18%; text-align: center; font-family: \'Aptos Narrow\', sans-serif;">PRAZO</th>' +
-          '<th bgcolor="#006633" style="background-color: #006633; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; color: #ffffff !important; width: 18%; text-align: center; font-family: \'Aptos Narrow\', sans-serif;">STATUS</th>' +
-          '<th bgcolor="#006633" style="background-color: #006633; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; color: #ffffff !important; width: 24%; text-align: left; font-family: \'Aptos Narrow\', sans-serif;">RESPONSÁVEL</th>' +
+        '<tr bgcolor="#006633" style="background-color: #006633 !important; color: #ffffff !important;">' +
+          '<th bgcolor="#006633" style="background-color: #006633 !important; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #004d26; color: #ffffff !important; width: 40%; text-align: left; font-family: \'Aptos Narrow\', sans-serif;"><font color="#ffffff"><b style="color: #ffffff !important;">PLANO DE AÇÃO</b></font></th>' +
+          '<th bgcolor="#006633" style="background-color: #006633 !important; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #004d26; color: #ffffff !important; width: 18%; text-align: center; font-family: \'Aptos Narrow\', sans-serif;"><font color="#ffffff"><b style="color: #ffffff !important;">PRAZO</b></font></th>' +
+          '<th bgcolor="#006633" style="background-color: #006633 !important; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #004d26; color: #ffffff !important; width: 18%; text-align: center; font-family: \'Aptos Narrow\', sans-serif;"><font color="#ffffff"><b style="color: #ffffff !important;">STATUS</b></font></th>' +
+          '<th bgcolor="#006633" style="background-color: #006633 !important; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #004d26; color: #ffffff !important; width: 24%; text-align: left; font-family: \'Aptos Narrow\', sans-serif;"><font color="#ffffff"><b style="color: #ffffff !important;">RESPONSÁVEL</b></font></th>' +
         '</tr>' +
       '</thead>' +
       '<tbody>' +
@@ -1345,11 +1323,11 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
     '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11.5px; font-weight: bold; color: #006633; text-transform: uppercase; border-left: 4px solid #006633; padding-left: 8px; margin-bottom: 6px; letter-spacing: 0.5px;">CONVERSA DE FEEDBACK</div>' +
     '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%; border: 1px solid #cbd5e1;">' +
       '<thead>' +
-        '<tr bgcolor="#006633" style="background-color: #006633; color: #ffffff;">' +
-          '<th bgcolor="#006633" style="background-color: #006633; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; color: #ffffff !important; width: 18%; text-align: center; font-family: \'Aptos Narrow\', sans-serif;">DATA</th>' +
-          '<th bgcolor="#006633" style="background-color: #006633; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; color: #ffffff !important; width: 34%; text-align: left; font-family: \'Aptos Narrow\', sans-serif;">NOME DO GESTOR</th>' +
-          '<th bgcolor="#006633" style="background-color: #006633; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; color: #ffffff !important; width: 22%; text-align: left; font-family: \'Aptos Narrow\', sans-serif;">FUNÇÃO</th>' +
-          '<th bgcolor="#006633" style="background-color: #006633; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; color: #ffffff !important; width: 26%; text-align: center; font-family: \'Aptos Narrow\', sans-serif;">ASSINATURA</th>' +
+        '<tr bgcolor="#006633" style="background-color: #006633 !important; color: #ffffff !important;">' +
+          '<th bgcolor="#006633" style="background-color: #006633 !important; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #004d26; color: #ffffff !important; width: 18%; text-align: center; font-family: \'Aptos Narrow\', sans-serif;"><font color="#ffffff"><b style="color: #ffffff !important;">DATA</b></font></th>' +
+          '<th bgcolor="#006633" style="background-color: #006633 !important; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #004d26; color: #ffffff !important; width: 34%; text-align: left; font-family: \'Aptos Narrow\', sans-serif;"><font color="#ffffff"><b style="color: #ffffff !important;">NOME DO GESTOR</b></font></th>' +
+          '<th bgcolor="#006633" style="background-color: #006633 !important; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #004d26; color: #ffffff !important; width: 22%; text-align: left; font-family: \'Aptos Narrow\', sans-serif;"><font color="#ffffff"><b style="color: #ffffff !important;">FUNÇÃO</b></font></th>' +
+          '<th bgcolor="#006633" style="background-color: #006633 !important; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #004d26; color: #ffffff !important; width: 26%; text-align: center; font-family: \'Aptos Narrow\', sans-serif;"><font color="#ffffff"><b style="color: #ffffff !important;">ASSINATURA</b></font></th>' +
         '</tr>' +
       '</thead>' +
       '<tbody>' +
@@ -1368,9 +1346,9 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
     '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11.5px; font-weight: bold; color: #334155; margin-bottom: 6px;">Declaro que recebi todas as informações acima:</div>' +
     '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%; border: 1px solid #cbd5e1;">' +
       '<thead>' +
-        '<tr bgcolor="#006633" style="background-color: #006633; color: #ffffff;">' +
-          '<th bgcolor="#006633" style="background-color: #006633; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; color: #ffffff !important; width: 50%; text-align: left; font-family: \'Aptos Narrow\', sans-serif;">NOME MOTORISTA</th>' +
-          '<th bgcolor="#006633" style="background-color: #006633; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #006633; color: #ffffff !important; width: 50%; text-align: center; font-family: \'Aptos Narrow\', sans-serif;">ASSINATURA</th>' +
+        '<tr bgcolor="#006633" style="background-color: #006633 !important; color: #ffffff !important;">' +
+          '<th bgcolor="#006633" style="background-color: #006633 !important; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #004d26; color: #ffffff !important; width: 50%; text-align: left; font-family: \'Aptos Narrow\', sans-serif;"><font color="#ffffff"><b style="color: #ffffff !important;">NOME MOTORISTA</b></font></th>' +
+          '<th bgcolor="#006633" style="background-color: #006633 !important; padding: 6px 8px; font-size: 9.5px; font-weight: bold; text-transform: uppercase; border: 1px solid #004d26; color: #ffffff !important; width: 50%; text-align: center; font-family: \'Aptos Narrow\', sans-serif;"><font color="#ffffff"><b style="color: #ffffff !important;">ASSINATURA</b></font></th>' +
         '</tr>' +
       '</thead>' +
       '<tbody>' +
@@ -1384,7 +1362,7 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
 
   // Montagem final do HTML do Relatório em PDF com Logo Risel no topo
   var htmlContent = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Relatório de Avaliação de Direção</title><style>@page { size: A4; margin: 10mm 10mm 10mm 10mm; } body { font-family: \'Aptos Narrow\', \'Arial Narrow\', Arial, sans-serif; color: #0f172a; background: #ffffff; margin: 0; padding: 0; }</style></head><body>' +
-    '<div style="height: 5px; background: linear-gradient(90deg, #006633 0%, #F99D1C 100%); margin-bottom: 10px; border-radius: 3px;"></div>' +
+    '<div style="height: 5px; background: #006633; margin-bottom: 10px; border-radius: 3px;"></div>' +
     '<div style="border-bottom: 2px solid #006633; padding-bottom: 8px; margin-bottom: 14px;">' +
       '<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr>' +
         '<td width="20%" valign="middle" align="left"><img src="https://risel.com.br/wp-content/uploads/2024/07/RISEL.png" style="max-height: 48px; width: auto; display: block;" /></td>' +
@@ -1397,7 +1375,7 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
     '<div style="margin-bottom: 14px;">' +
       '<div style="background-color: #f8fafc; border: 1.5px solid #006633; border-radius: 6px; padding: 6px 10px; margin-bottom: 6px;"><span style="font-size: 8.5px; color: #006633; font-weight: bold; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">👤 MOTORISTA</span><div style="font-size: 12px; font-weight: 800; color: #0f172a; margin-top: 2px; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">' + motorista + '</div></div>' +
       '<div style="background-color: #f8fafc; border: 1.5px solid #006633; border-radius: 6px; padding: 6px 10px; margin-bottom: 10px;"><span style="font-size: 8.5px; color: #006633; font-weight: bold; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">📋 AVALIADOR</span><div style="font-size: 12px; font-weight: 800; color: #0f172a; margin-top: 2px; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">' + avaliador + '</div></div>' +
-      '<div bgcolor="#006633" style="background-color: #006633; color: #ffffff; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11px; font-weight: 800; text-transform: uppercase; padding: 7px 12px; border-radius: 6px; text-align: center; letter-spacing: 0.5px; margin-bottom: 6px;">INFORMAÇÕES DA DESCARGA</div>' +
+      '<div bgcolor="#006633" style="background-color: #006633 !important; color: #ffffff !important; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11px; font-weight: 800; text-transform: uppercase; padding: 7px 12px; border-radius: 6px; text-align: center; letter-spacing: 0.5px; margin-bottom: 6px;"><font color="#ffffff"><b style="color: #ffffff !important;">INFORMAÇÕES DA DESCARGA</b></font></div>' +
       '<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; margin-bottom: 5px;"><span style="font-size: 8.5px; color: #475569; font-weight: bold; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">🏢 TRANSPORTADORA</span><div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-top: 1px; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">' + transportadora + '</div></div>' +
       '<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; margin-bottom: 5px;"><span style="font-size: 8.5px; color: #475569; font-weight: bold; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">🚛 FROTA</span><div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-top: 1px; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">' + frota + '</div></div>' +
       '<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; margin-bottom: 5px;"><span style="font-size: 8.5px; color: #475569; font-weight: bold; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">📅 DATA DA AVALIAÇÃO</span><div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-top: 1px; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">' + dataAval + '</div></div>' +
