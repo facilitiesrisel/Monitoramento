@@ -2,6 +2,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { getRawEvaluations, getManagedDrivers, getPriorityDrivers, getDashboardMetrics, getEvaluatorStats, getDriverStats, normalizeEvaluatorName, getWeeksInMonth, getActiveOperatorCount, sendTestEmail, loadData, deleteEvaluation, downloadEvaluationsCSV, resendEvaluationEmail } from '../services/dataService';
 import { DriverProfile, Evaluation, UserRole, PriorityDriverStatus } from '../types';
+import { EvaluationReportView } from './EvaluationReportView';
 import { 
     Search, AlertCircle, CheckCircle, Filter, ChevronUp, ChevronDown, Calendar, User, 
     RefreshCw, ArrowUpDown, ArrowUp, ArrowDown, UserCheck, AlertTriangle, X, PlusCircle, 
@@ -90,6 +91,7 @@ const EvaluationsTable: React.FC<EvaluationsTableProps> = ({ userRole, userName,
   const [sortConfig, setSortConfig] = useState<{ key: keyof Evaluation; direction: 'asc' | 'desc' } | null>(null);
   const [availableDrivers, setAvailableDrivers] = useState<DriverProfile[]>([]);
   const [isResending, setIsResending] = useState<string | null>(null);
+  const [selectedReportEvalId, setSelectedReportEvalId] = useState<string | null>(null);
 
   const handleResendEmail = async (ev: Evaluation) => {
       const customEmail = prompt(`Reenviar e-mail da Avaliação de ${ev.driver}?\n\nInforme um e-mail específico se desejar (ou deixe em branco para enviar aos destinatários padrão):`, "");
@@ -600,6 +602,14 @@ const EvaluationsTable: React.FC<EvaluationsTableProps> = ({ userRole, userName,
                     </td>
                     <td className="p-4 text-right">
                         <div className="flex justify-end gap-2">
+                            {/* Botão Olhinho: Visualizar Relatório em PDF/Web */}
+                            <button 
+                                onClick={() => setSelectedReportEvalId(ev.id)}
+                                className="p-1.5 bg-white border border-slate-200 text-slate-500 hover:text-[#006633] hover:border-[#006633] rounded transition-all shadow-sm"
+                                title="Visualizar Relatório Completo da Avaliação"
+                            >
+                                <Eye size={14} />
+                            </button>
                             <button 
                                 onClick={() => handleResendEmail(ev)}
                                 disabled={isResending === ev.id}
@@ -608,13 +618,13 @@ const EvaluationsTable: React.FC<EvaluationsTableProps> = ({ userRole, userName,
                             >
                                 {isResending === ev.id ? <Loader2 size={14} className="animate-spin text-blue-600" /> : <Mail size={14} />}
                             </button>
-                            {(userRole === 'admin' || userRole === 'quality') && (
+                            {userRole === 'admin' && (
                                 <button 
                                     onClick={() => onEditEvaluation && onEditEvaluation(ev.id)}
                                     className="p-1.5 bg-white border border-slate-200 text-slate-400 hover:text-[#00ad74] hover:border-[#00ad74] rounded transition-all shadow-sm"
-                                    title={userRole === 'quality' ? "Visualizar Detalhes" : "Editar Avaliação"}
+                                    title="Editar Avaliação"
                                 >
-                                    {userRole === 'quality' ? <Eye size={14} /> : <Pencil size={14} />}
+                                    <Pencil size={14} />
                                 </button>
                             )}
                             {userRole === 'admin' && (
@@ -1089,6 +1099,13 @@ const EvaluationsTable: React.FC<EvaluationsTableProps> = ({ userRole, userName,
                </div>
            </div>
       )}
+       {/* MODAL DE VISUALIZAÇÃO DE RELATÓRIO DE AVALIAÇÃO (OLHINHO) */}
+       {selectedReportEvalId && (
+           <EvaluationReportView 
+               evaluationId={selectedReportEvalId} 
+               onClose={() => setSelectedReportEvalId(null)} 
+           />
+       )}
     </div>
   );
 };
