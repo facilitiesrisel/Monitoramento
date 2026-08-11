@@ -167,20 +167,20 @@ export const EvaluationReportView: React.FC<EvaluationReportViewProps> = ({ eval
 
         if (isNao) {
             return (
-                <span className="inline-block px-3 py-1 bg-[#ef4444] text-white font-black text-xs rounded uppercase tracking-wide text-center w-24 shadow-sm">
+                <span className="inline-block px-3 py-1 bg-[#ef4444] text-white font-black text-xs rounded uppercase tracking-wide text-center w-20 shadow-sm">
                     NÃO
                 </span>
             );
         }
         if (isNa) {
             return (
-                <span className="inline-block px-3 py-1 bg-[#3b82f6] text-white font-black text-xs rounded uppercase tracking-wide text-center w-24 shadow-sm">
+                <span className="inline-block px-3 py-1 bg-[#3b82f6] text-white font-black text-xs rounded uppercase tracking-wide text-center w-20 shadow-sm">
                     N/A
                 </span>
             );
         }
         return (
-            <span className="inline-block px-3 py-1 bg-[#10b981] text-white font-black text-xs rounded uppercase tracking-wide text-center w-24 shadow-sm">
+            <span className="inline-block px-3 py-1 bg-[#10b981] text-white font-black text-xs rounded uppercase tracking-wide text-center w-20 shadow-sm">
                 SIM
             </span>
         );
@@ -270,46 +270,46 @@ export const EvaluationReportView: React.FC<EvaluationReportViewProps> = ({ eval
 
                         {/* Informações Iniciais Box */}
                         <div className="space-y-2 mb-6">
-                            <div className="bg-slate-50 border-1.5 border-[#006633] rounded-lg p-3 flex justify-between items-center">
+                            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex justify-between items-center">
                                 <div>
-                                    <span className="text-[10px] font-extrabold text-[#006633] uppercase tracking-wider block">👤 MOTORISTA AVALIADO</span>
+                                    <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block mb-0.5">👤 MOTORISTA</span>
                                     <span className="text-base font-black text-slate-900 uppercase">{driverName}</span>
                                 </div>
                                 <div className="text-right">
-                                    <span className="text-[10px] font-extrabold text-[#006633] uppercase tracking-wider block">📋 AVALIADOR / RESPONSÁVEL</span>
+                                    <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block mb-0.5">📋 AVALIADOR</span>
                                     <span className="text-sm font-bold text-slate-800 uppercase">{evaluatorName}</span>
                                 </div>
                             </div>
 
                             {/* Título Seção Descarga */}
                             <div className="bg-[#006633] text-white text-center py-2 rounded-md font-extrabold text-xs uppercase tracking-wider shadow-sm">
-                                INFORMAÇÕES DA VIAGEM / AVALIAÇÃO
+                                INFORMAÇÕES DA DESCARGA
                             </div>
 
                             {/* Meta Details Grid */}
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                                <div className="bg-slate-50 border border-slate-200 rounded p-2">
-                                    <span className="text-[9px] font-bold text-slate-500 uppercase block">Transportadora</span>
-                                    <span className="font-extrabold text-slate-900 uppercase">{transportadora}</span>
+                                <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+                                    <span className="text-[9px] font-bold text-slate-500 uppercase block mb-0.5">🏢 TRANSPORTADORA</span>
+                                    <span className="font-extrabold text-slate-900 uppercase text-xs">{transportadora}</span>
                                 </div>
-                                <div className="bg-slate-50 border border-slate-200 rounded p-2">
-                                    <span className="text-[9px] font-bold text-slate-500 uppercase block">Frota / Veículo</span>
-                                    <span className="font-extrabold text-slate-900 uppercase">{frota}</span>
+                                <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+                                    <span className="text-[9px] font-bold text-slate-500 uppercase block mb-0.5">🚛 FROTA</span>
+                                    <span className="font-extrabold text-slate-900 uppercase text-xs">{frota}</span>
                                 </div>
-                                <div className="bg-slate-50 border border-slate-200 rounded p-2">
-                                    <span className="text-[9px] font-bold text-slate-500 uppercase block">Data</span>
-                                    <span className="font-extrabold text-slate-900 uppercase">{evalDateOnly}</span>
+                                <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+                                    <span className="text-[9px] font-bold text-slate-500 uppercase block mb-0.5">📅 DATA DA AVALIAÇÃO</span>
+                                    <span className="font-extrabold text-slate-900 uppercase text-xs">{evalDateOnly}</span>
                                 </div>
-                                <div className="bg-slate-50 border border-slate-200 rounded p-2">
-                                    <span className="text-[9px] font-bold text-slate-500 uppercase block">Local / Trecho</span>
-                                    <span className="font-extrabold text-slate-900 uppercase">{localTrecho}</span>
+                                <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+                                    <span className="text-[9px] font-bold text-slate-500 uppercase block mb-0.5">📍 LOCAL / TRECHO</span>
+                                    <span className="font-extrabold text-slate-900 uppercase text-xs">{localTrecho}</span>
                                 </div>
                             </div>
                         </div>
 
                         {/* Detalhamento dos Itens Avaliados Header */}
                         <div className="mb-2 font-extrabold text-[#006633] text-xs uppercase tracking-wider border-l-4 border-[#006633] pl-2 py-0.5">
-                            Detalhamento dos Itens Avaliados (1 a 30)
+                            DETALHAMENTO DOS ITENS AVALIADOS
                         </div>
 
                         {/* Checklist Items Table */}
@@ -455,17 +455,17 @@ export const EvaluationReportView: React.FC<EvaluationReportViewProps> = ({ eval
                             <div className="mb-1 font-extrabold text-[#006633] text-xs uppercase tracking-wider border-l-4 border-[#006633] pl-2 py-0.5">
                                 OBSERVAÇÕES
                             </div>
-                            <div className="bg-slate-50 border border-slate-300 border-l-4 border-l-[#006633] rounded p-3 text-xs text-slate-800 min-h-[48px] leading-relaxed">
-                                {obs || 'Nenhuma observação informada.'}
+                            <div className="bg-slate-50 border border-slate-300 border-l-4 border-l-[#006633] rounded-lg p-3 text-xs text-slate-800 min-h-[44px] leading-relaxed">
+                                {obs || 'Nenhum comentário registrado.'}
                             </div>
                         </div>
 
-                        {/* Cards de Pontos por Hora e Resultado Geral do Acompanhamento (Maiores com Gradiente e Destaque) */}
+                        {/* Quadros de Pontos por Hora e Resultado Geral do Acompanhamento (Cards Gradientes com Destaque) */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                             {/* Card Pontos por Hora */}
-                            <div className={`bg-gradient-to-br ${cardGradientPoints} rounded-2xl p-5 shadow-lg border text-center flex flex-col justify-center items-center transform transition-all`}>
-                                <span className="text-[11px] font-black uppercase tracking-widest opacity-95 mb-1 drop-shadow-sm">
-                                    PONTOS POR HORA
+                            <div className={`bg-gradient-to-br ${cardGradientPoints} rounded-2xl p-6 shadow-lg border text-center flex flex-col justify-center items-center transform transition-all`}>
+                                <span className="text-xs font-black uppercase tracking-widest opacity-95 mb-1 drop-shadow-sm">
+                                    PONTOS POR HORA / PONTUAÇÃO
                                 </span>
                                 <span className="text-4xl sm:text-5xl font-black tracking-tight drop-shadow-md my-1">
                                     {pontosPorHora}
@@ -473,8 +473,8 @@ export const EvaluationReportView: React.FC<EvaluationReportViewProps> = ({ eval
                             </div>
 
                             {/* Card Resultado Geral do Acompanhamento */}
-                            <div className={`bg-gradient-to-br ${cardGradientResult} rounded-2xl p-5 shadow-lg border text-center flex flex-col justify-center items-center transform transition-all`}>
-                                <span className="text-[11px] font-black uppercase tracking-widest opacity-95 mb-1 drop-shadow-sm">
+                            <div className={`bg-gradient-to-br ${cardGradientResult} rounded-2xl p-6 shadow-lg border text-center flex flex-col justify-center items-center transform transition-all`}>
+                                <span className="text-xs font-black uppercase tracking-widest opacity-95 mb-1 drop-shadow-sm">
                                     RESULTADO GERAL DO ACOMPANHAMENTO
                                 </span>
                                 <span className="text-4xl sm:text-5xl font-black tracking-tight drop-shadow-md my-1">

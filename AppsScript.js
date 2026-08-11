@@ -1189,20 +1189,23 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
     var isNao = (valUpper === 'NÃO' || valUpper === 'NAO' || valUpper.indexOf('NÃO') !== -1 || valUpper.indexOf('NAO') !== -1 || valUpper === 'N' || valUpper === 'NC');
     var isNa = (valUpper === 'NA' || valUpper === 'N/A' || valUpper.indexOf('N/A') !== -1 || valUpper.indexOf(' N/A') !== -1);
 
-    var cellBgColor = '#10b981'; // Verde SIM (#10b981)
+    var badgeBgColor = '#10b981'; // Verde SIM (#10b981)
+    var badgeText = 'SIM';
 
     if (isNao) {
-      cellBgColor = '#ef4444'; // Vermelho NÃO (#ef4444)
+      badgeBgColor = '#ef4444'; // Vermelho NÃO (#ef4444)
+      badgeText = 'NÃO';
     } else if (isNa) {
-      cellBgColor = '#3b82f6'; // Azul NA (#3b82f6)
+      badgeBgColor = '#3b82f6'; // Azul NA (#3b82f6)
+      badgeText = 'N/A';
     }
 
     var rowBg = (q % 2 === 0) ? '#ffffff' : '#f8fafc';
 
     tableRowsHtml += '<tr style="background-color: ' + rowBg + ';">' +
       '<td style="padding: 7px 10px; border: 1px solid #cbd5e1; font-size: 11.5px; font-weight: bold; color: #1e293b; width: 78%; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif;">' + qObj.text + '</td>' +
-      '<td align="center" valign="middle" bgcolor="' + cellBgColor + '" style="padding: 6px 4px; border: 1px solid #cbd5e1; font-size: 11px; text-align: center; width: 22%; vertical-align: middle; background-color: ' + cellBgColor + '; color: #ffffff;">' +
-        '<font color="#ffffff"><b style="color: #ffffff; font-weight: 900; font-family: \'Aptos Narrow\', sans-serif; font-size: 11px; text-transform: uppercase;">' + (qObj.value || '-') + '</b></font>' +
+      '<td align="center" valign="middle" style="padding: 5px 4px; border: 1px solid #cbd5e1; text-align: center; width: 22%; vertical-align: middle;">' +
+        '<span style="display: inline-block; background-color: ' + badgeBgColor + '; color: #ffffff; padding: 3px 12px; border-radius: 4px; font-weight: 900; font-family: \'Aptos Narrow\', sans-serif; font-size: 11px; text-transform: uppercase; text-align: center; width: 60px;">' + badgeText + '</span>' +
       '</td>' +
     '</tr>';
   }
@@ -1322,7 +1325,7 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
     '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="table-layout: fixed; width: 100%; border-spacing: 0; border-collapse: separate;">' +
       '<tr>' +
         '<td width="48%" valign="middle" align="center" style="width: 48%; ' + bgGradPontos + ' border-radius: 12px; padding: 16px 12px; text-align: center; height: 95px; vertical-align: middle;">' +
-          '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;"><font color="#ffffff"><b style="color: #ffffff;">PONTOS POR HORA</b></font></div>' +
+          '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;"><font color="#ffffff"><b style="color: #ffffff;">PONTOS POR HORA / PONTUAÇÃO</b></font></div>' +
           '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 30px; font-weight: 900;"><font color="#ffffff"><b style="color: #ffffff;">' + pontosVal + '</b></font></div>' +
         '</td>' +
         '<td width="4%" style="width: 4%;"></td>' +
