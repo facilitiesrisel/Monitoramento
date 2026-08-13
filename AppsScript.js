@@ -1204,8 +1204,8 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
 
     tableRowsHtml += '<tr style="background-color: ' + rowBg + ';">' +
       '<td style="padding: 7px 10px; border: 1px solid #cbd5e1; font-size: 11.5px; font-weight: bold; color: #1e293b; width: 78%; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif;">' + qObj.text + '</td>' +
-      '<td align="center" valign="middle" style="padding: 5px 4px; border: 1px solid #cbd5e1; text-align: center; width: 22%; vertical-align: middle;">' +
-        '<span style="display: inline-block; background-color: ' + badgeBgColor + '; color: #ffffff; padding: 3px 12px; border-radius: 4px; font-weight: 900; font-family: \'Aptos Narrow\', sans-serif; font-size: 11px; text-transform: uppercase; text-align: center; width: 60px;">' + badgeText + '</span>' +
+      '<td align="center" valign="middle" bgcolor="' + badgeBgColor + '" style="padding: 5px 4px; border: 1px solid #cbd5e1; text-align: center; width: 22%; vertical-align: middle; background-color: ' + badgeBgColor + '; color: #ffffff;">' +
+        '<font color="#ffffff"><b style="color: #ffffff; font-weight: 900; font-family: \'Aptos Narrow\', sans-serif; font-size: 11px; text-transform: uppercase;">' + badgeText + '</b></font>' +
       '</td>' +
     '</tr>';
   }
@@ -1310,28 +1310,28 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
   var numScore = parseFloat(String(resultadoVal).replace('%', '').replace(',', '.')) || parseFloat(String(pontosVal)) || 100;
   if (numScore <= 1 && numScore > 0) numScore *= 100;
 
-  var bgGradPontos = 'background-color: #047857; background: linear-gradient(135deg, #047857 0%, #065f46 100%); color: #ffffff; border: 1.5px solid #064e3b;';
-  var bgGradResultado = 'background-color: #006633; background: linear-gradient(135deg, #006633 0%, #004d26 100%); color: #ffffff; border: 1.5px solid #003319;';
+  var bgPontosColor = '#047857';
+  var bgResultadoColor = '#006633';
 
   if (numScore < 70) {
-    bgGradPontos = 'background-color: #e11d48; background: linear-gradient(135deg, #e11d48 0%, #be123c 100%); color: #ffffff; border: 1.5px solid #9f1239;';
-    bgGradResultado = 'background-color: #b91c1c; background: linear-gradient(135deg, #b91c1c 0%, #991b1b 100%); color: #ffffff; border: 1.5px solid #7f1d1d;';
+    bgPontosColor = '#be123c';
+    bgResultadoColor = '#b91c1c';
   } else if (numScore < 90) {
-    bgGradPontos = 'background-color: #d97706; background: linear-gradient(135deg, #d97706 0%, #b45309 100%); color: #ffffff; border: 1.5px solid #92400e;';
-    bgGradResultado = 'background-color: #ca8a04; background: linear-gradient(135deg, #ca8a04 0%, #a16207 100%); color: #ffffff; border: 1.5px solid #854d0e;';
+    bgPontosColor = '#d97706';
+    bgResultadoColor = '#ca8a04';
   }
 
   var pontosResultadoHtml = '<div style="margin-top: 18px; margin-bottom: 20px; page-break-inside: avoid;">' +
     '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="table-layout: fixed; width: 100%; border-spacing: 0; border-collapse: separate;">' +
       '<tr>' +
-        '<td width="48%" valign="middle" align="center" style="width: 48%; ' + bgGradPontos + ' border-radius: 12px; padding: 16px 12px; text-align: center; height: 95px; vertical-align: middle;">' +
+        '<td width="48%" valign="middle" align="center" bgcolor="' + bgPontosColor + '" style="width: 48%; background-color: ' + bgPontosColor + '; border-radius: 12px; padding: 16px 12px; text-align: center; height: 95px; vertical-align: middle; border: 1.5px solid ' + bgPontosColor + ';">' +
           '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;"><font color="#ffffff"><b style="color: #ffffff;">PONTOS POR HORA / PONTUAÇÃO</b></font></div>' +
-          '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 30px; font-weight: 900;"><font color="#ffffff"><b style="color: #ffffff;">' + pontosVal + '</b></font></div>' +
+          '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 32px; font-weight: 900;"><font color="#ffffff"><b style="color: #ffffff;">' + pontosVal + '</b></font></div>' +
         '</td>' +
         '<td width="4%" style="width: 4%;"></td>' +
-        '<td width="48%" valign="middle" align="center" style="width: 48%; ' + bgGradResultado + ' border-radius: 12px; padding: 16px 12px; text-align: center; height: 95px; vertical-align: middle;">' +
+        '<td width="48%" valign="middle" align="center" bgcolor="' + bgResultadoColor + '" style="width: 48%; background-color: ' + bgResultadoColor + '; border-radius: 12px; padding: 16px 12px; text-align: center; height: 95px; vertical-align: middle; border: 1.5px solid ' + bgResultadoColor + ';">' +
           '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px;"><font color="#ffffff"><b style="color: #ffffff;">RESULTADO GERAL DO ACOMPANHAMENTO</b></font></div>' +
-          '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 30px; font-weight: 900;"><font color="#ffffff"><b style="color: #ffffff;">' + resultadoVal + '</b></font></div>' +
+          '<div style="font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 32px; font-weight: 900;"><font color="#ffffff"><b style="color: #ffffff;">' + resultadoVal + '</b></font></div>' +
         '</td>' +
       '</tr>' +
     '</table>' +

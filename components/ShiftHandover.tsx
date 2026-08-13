@@ -80,6 +80,48 @@ const TYPES: OccurrenceType[] = ['CFTV', 'Checklist do Setor', 'Monitoramento', 
 const getActualDescription = (desc: string) => desc.includes('|||AUDIT|||') ? desc.split('|||AUDIT|||')[0] : desc;
 const getAuditLog = (desc: string) => desc.includes('|||AUDIT|||') ? desc.split('|||AUDIT|||')[1] : '';
 
+export const splitDescriptionLines = (desc: string): string[] => {
+  if (!desc) return [];
+  const rawLines = desc.split(/\r?\n/);
+  const lines: string[] = [];
+
+  for (let line of rawLines) {
+    let trimmed = line.trim();
+    if (!trimmed) continue;
+    // Strip leading bullet characters if present so we can standardize bullet topics
+    trimmed = trimmed.replace(/^[-•*–—]\s*/, '');
+    if (trimmed) {
+      lines.push(trimmed);
+    }
+  }
+
+  return lines;
+};
+
+const renderFormattedDescription = (descText: string, isHistory = false) => {
+  const lines = splitDescriptionLines(descText);
+  if (lines.length === 0) return <span className="text-slate-400 italic">Sem informação</span>;
+  
+  if (lines.length === 1) {
+    return (
+      <div className={`text-slate-700 font-medium leading-relaxed ${isHistory ? 'text-[11px]' : 'text-sm'}`}>
+        {lines[0]}
+      </div>
+    );
+  }
+
+  return (
+    <ul className={`space-y-1.5 mt-1 text-slate-700 font-medium ${isHistory ? 'text-[11px]' : 'text-sm'}`}>
+      {lines.map((line, idx) => (
+        <li key={idx} className="flex items-start gap-2">
+          <span className="text-emerald-500 font-bold text-xs mt-0.5 select-none">•</span>
+          <span className="flex-1 leading-relaxed">{line}</span>
+        </li>
+      ))}
+    </ul>
+  );
+};
+
 export const encodeChecklist = (
   cafeteira: boolean, 
   limpeza: boolean, 
@@ -483,7 +525,18 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
         // Sort occurrences by type for better organization
         const sortedOccs = [...baseOccs].sort((a, b) => a.type.localeCompare(b.type));
         sortedOccs.forEach(occ => {
-          template += `- [${occ.type}] ${getActualDescription(occ.description)}\n`;
+          const rawDesc = getActualDescription(occ.description);
+          const lines = splitDescriptionLines(rawDesc);
+
+          if (lines.length <= 1) {
+            const singleText = lines[0] || 'Sem Alterações';
+            template += `- [${occ.type}] ${singleText}\n`;
+          } else {
+            template += `- [${occ.type}]\n`;
+            lines.forEach(line => {
+              template += `  • ${line}\n`;
+            });
+          }
         });
       }
       template += `\n`;
@@ -492,7 +545,11 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
     if (orientations.length > 0) {
       template += `*ORIENTAÇÕES GERAIS*\n`;
       orientations.forEach(occ => {
-        template += `- ${getActualDescription(occ.description)}\n`;
+        const rawDesc = getActualDescription(occ.description);
+        const lines = splitDescriptionLines(rawDesc);
+        lines.forEach(line => {
+          template += `• ${line}\n`;
+        });
       });
       template += `\n`;
     }
@@ -509,10 +566,21 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
           template += `- Alertas Rastreador Tratados: ${decoded.alertasRastreador ? 'Sim' : 'Não'}\n`;
           template += `- Alertas CFTV Tratados: ${decoded.alertasCFTV ? 'Sim' : 'Não'}\n`;
           if (decoded.description) {
-            template += `- Observação: ${decoded.description}\n`;
+            const obsLines = splitDescriptionLines(decoded.description);
+            if (obsLines.length <= 1) {
+              template += `- Observação: ${obsLines[0] || ''}\n`;
+            } else {
+              template += `- Observações:\n`;
+              obsLines.forEach(l => {
+                template += `  • ${l}\n`;
+              });
+            }
           }
         } else {
-          template += `- ${getActualDescription(occ.description)}\n`;
+          const lines = splitDescriptionLines(getActualDescription(occ.description));
+          lines.forEach(l => {
+            template += `- ${l}\n`;
+          });
         }
       });
     }
@@ -597,13 +665,29 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                            occ.type === 'Orientação' ? '#2563eb' : 
                            occ.type === 'Monitoramento' ? '#059669' : '#475569';
           
+          const rawDesc = getActualDescription(occ.description);
+          const lines = splitDescriptionLines(rawDesc);
+
+          let descHtml = '';
+          if (lines.length === 0) {
+            descHtml = '<div style="color: #64748b; font-size: 13px;">Sem Alterações</div>';
+          } else if (lines.length === 1) {
+            descHtml = `<div style="color: #334155; font-size: 13px; margin-top: 2px;">${lines[0]}</div>`;
+          } else {
+            descHtml = `
+              <ul style="margin: 4px 0 0 0; padding-left: 18px; color: #334155; font-size: 13px; line-height: 1.5;">
+                ${lines.map(line => `<li style="margin-bottom: 3px;">${line}</li>`).join('')}
+              </ul>
+            `;
+          }
+
           html += `
             <tr ${idx > 0 ? 'style="border-top: 1px solid #f1f5f9;"' : ''}>
               <td style="font-family: Arial, sans-serif; padding: ${idx > 0 ? '8px 0' : '0 0 8px 0'}; font-size: 13px; line-height: 1.5; color: #334155;">
                 <div style="margin-bottom: 4px;">
                   <span style="color: ${typeColor}; font-weight: bold; font-size: 10px; text-transform: uppercase; background-color: ${typeColor}15; padding: 2px 6px; border-radius: 4px;">${occ.type}</span>
                 </div>
-                ${getActualDescription(occ.description)}
+                ${descHtml}
               </td>
             </tr>
           `;
@@ -636,10 +720,14 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
       `;
       
       orientations.forEach((occ, idx) => {
+        const rawDesc = getActualDescription(occ.description);
+        const lines = splitDescriptionLines(rawDesc);
         html += `
                     <tr ${idx > 0 ? 'style="border-top: 1px solid #e2e8f0;"' : ''}>
                       <td style="font-family: Arial, sans-serif; padding: ${idx > 0 ? '8px 0' : '0 0 8px 0'}; font-size: 13px; color: #334155; line-height: 1.5;">
-                        • ${getActualDescription(occ.description)}
+                        <ul style="margin: 0; padding-left: 18px; color: #334155;">
+                          ${lines.map(line => `<li style="margin-bottom: 3px;">${line}</li>`).join('')}
+                        </ul>
                       </td>
                     </tr>
         `;
@@ -673,6 +761,7 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
       checklists.forEach((occ, idx) => {
         const decoded = decodeChecklist(getActualDescription(occ.description));
         if (decoded) {
+          const obsLines = decoded.description ? splitDescriptionLines(decoded.description) : [];
           html += `
                     <tr ${idx > 0 ? 'style="border-top: 1px solid #e2e8f0;"' : ''}>
                       <td style="font-family: Arial, sans-serif; padding: ${idx > 0 ? '8px 0' : '0 0 8px 0'}; font-size: 13px; color: #334155; line-height: 1.5;">
@@ -695,16 +784,28 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                           <div>
                             <span style="color: ${decoded.alertasCFTV ? '#10b981' : '#ef4444'}; font-weight: bold;">${decoded.alertasCFTV ? '✓' : '✗'}</span> Alertas CFTV Tratados
                           </div>
-                          ${decoded.description ? `<div style="margin-top: 4px; color: #64748b; font-size: 12px;"><em>Obs: ${decoded.description}</em></div>` : ''}
+                          ${obsLines.length > 0 ? `
+                            <div style="margin-top: 6px; color: #475569; font-size: 12px;">
+                              <strong>Observações:</strong>
+                              ${obsLines.length === 1 ? obsLines[0] : `
+                                <ul style="margin: 2px 0 0 0; padding-left: 16px;">
+                                  ${obsLines.map(l => `<li style="margin-bottom: 2px;">${l}</li>`).join('')}
+                                </ul>
+                              `}
+                            </div>
+                          ` : ''}
                         </div>
                       </td>
                     </tr>
           `;
         } else {
+          const lines = splitDescriptionLines(getActualDescription(occ.description));
           html += `
                     <tr ${idx > 0 ? 'style="border-top: 1px solid #e2e8f0;"' : ''}>
                       <td style="font-family: Arial, sans-serif; padding: ${idx > 0 ? '8px 0' : '0 0 8px 0'}; font-size: 13px; color: #334155; line-height: 1.5;">
-                        • ${getActualDescription(occ.description)}
+                        <ul style="margin: 0; padding-left: 18px; color: #334155;">
+                          ${lines.map(line => `<li style="margin-bottom: 3px;">${line}</li>`).join('')}
+                        </ul>
                       </td>
                     </tr>
           `;
@@ -1059,11 +1160,14 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Descrição</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Descrição / Tópicos</label>
+                    <span className="text-[10px] text-slate-400 font-medium">Pressione Enter para criar tópicos</span>
+                  </div>
                   <textarea 
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Descreva o que aconteceu..."
+                    placeholder="Descreva o que aconteceu. Você pode pular linhas ou dar Enter para separar em tópicos..."
                     rows={4}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-medium focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all resize-none"
                   />
@@ -1093,10 +1197,10 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
             <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 space-y-3">
               <div className="flex items-center gap-3 text-emerald-700">
                 <Info size={20} />
-                <h4 className="font-bold text-sm">Dica de Uso</h4>
+                <h4 className="font-bold text-sm">Estruturação em Tópicos</h4>
               </div>
               <p className="text-xs text-emerald-600 leading-relaxed font-medium">
-                Insira as ocorrências assim que elas acontecerem. Ao final do turno, clique em <strong>Finalizar Turno</strong> para gerar o texto formatado para o e-mail.
+                Insira as ocorrências do turno. Se houver múltiplas informações, aperte <strong>Enter</strong> para pular linha. O relatório de finalização gerará automaticamente tópicos organizados por base.
               </p>
             </div>
           </div>
@@ -1195,14 +1299,14 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                                   </div>
                                   {decoded.description && (
                                     <div className="mt-2 text-xs text-slate-500 italic">
-                                      Obs: {decoded.description}
+                                      Obs: {renderFormattedDescription(decoded.description)}
                                     </div>
                                   )}
                                 </div>
                               );
                             }
-                            return getActualDescription(occ.description);
-                          })() : getActualDescription(occ.description)}
+                            return renderFormattedDescription(getActualDescription(occ.description));
+                          })() : renderFormattedDescription(getActualDescription(occ.description))}
                         </div>
                       </div>
                     </div>
@@ -1436,14 +1540,14 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                                                         </div>
                                                         {decoded.description && (
                                                           <div className="mt-1 text-[10px] text-slate-500 italic">
-                                                            Obs: {decoded.description}
+                                                            Obs: {renderFormattedDescription(decoded.description, true)}
                                                           </div>
                                                         )}
                                                       </div>
                                                     );
                                                   }
-                                                  return getActualDescription(occ.description);
-                                                })() : getActualDescription(occ.description)}
+                                                  return renderFormattedDescription(getActualDescription(occ.description), true);
+                                                })() : renderFormattedDescription(getActualDescription(occ.description), true)}
                                               </div>
                                             </div>
                                           ))}
@@ -1554,14 +1658,14 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                                   </div>
                                   {decoded.description && (
                                     <div className="mt-2 text-xs text-slate-500 italic">
-                                      Obs: {decoded.description}
+                                      Obs: {renderFormattedDescription(decoded.description)}
                                     </div>
                                   )}
                                 </div>
                               );
                             }
-                            return actualDesc;
-                          })() : actualDesc}
+                            return renderFormattedDescription(actualDesc);
+                          })() : renderFormattedDescription(actualDesc)}
                         </div>
                       </div>
                       
@@ -1711,14 +1815,14 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                                             </div>
                                             {decoded.description && (
                                               <div className="mt-2 text-xs text-slate-500 italic">
-                                                Obs: {decoded.description}
+                                                Obs: {renderFormattedDescription(decoded.description)}
                                               </div>
                                             )}
                                           </div>
                                         );
                                       }
-                                      return getActualDescription(occ.description);
-                                    })() : getActualDescription(occ.description)}
+                                      return renderFormattedDescription(getActualDescription(occ.description));
+                                    })() : renderFormattedDescription(getActualDescription(occ.description))}
                                   </div>
                                   <div className="flex items-center justify-between pt-2">
                                     <span className="text-[10px] font-black text-emerald-600 uppercase">
