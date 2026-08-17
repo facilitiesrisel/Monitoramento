@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ClipboardCheck, 
   Plus, 
@@ -49,9 +49,22 @@ interface ShiftHandoverProps {
   userRole?: UserRole;
 }
 
-const BASES = ['Aguaí', 'Araraquara', 'Betim', 'Capão Bonito', 'Cubatão', 'Jales', 'Ourinhos', 'Paulínia', 'São Bernardo', 'Suprimentos', 'Geral'];
+const DEFAULT_BASES = [
+  'Aguaí', 
+  'Araraquara', 
+  'Betim', 
+  'Capão Bonito', 
+  'Cubatão', 
+  'Jales', 
+  'Ourinhos', 
+  'Paulínia', 
+  'São Bernardo', 
+  'São Paulo', 
+  'Suprimentos', 
+  'Geral'
+];
 
-const BASE_COLORS: Record<string, string> = {
+const DEFAULT_BASE_COLORS: Record<string, string> = {
   'Aguaí': 'bg-blue-500',
   'Araraquara': 'bg-emerald-500',
   'Betim': 'bg-purple-500',
@@ -61,11 +74,12 @@ const BASE_COLORS: Record<string, string> = {
   'Ourinhos': 'bg-indigo-500',
   'Paulínia': 'bg-rose-500',
   'São Bernardo': 'bg-amber-500',
+  'São Paulo': 'bg-violet-500',
   'Suprimentos': 'bg-teal-500',
   'Geral': 'bg-slate-500',
 };
 
-const BASE_HEX_COLORS: Record<string, string> = {
+const DEFAULT_BASE_HEX_COLORS: Record<string, string> = {
   'Aguaí': '#3b82f6',
   'Araraquara': '#10b981',
   'Betim': '#a855f7',
@@ -75,10 +89,76 @@ const BASE_HEX_COLORS: Record<string, string> = {
   'Ourinhos': '#6366f1',
   'Paulínia': '#f43f5e',
   'São Bernardo': '#f59e0b',
+  'São Paulo': '#8b5cf6',
   'Suprimentos': '#14b8a6',
   'Geral': '#64748b',
 };
-const TYPES: OccurrenceType[] = ['CFTV', 'Checklist do Setor', 'Monitoramento', 'Ocorrência', 'Orientação', 'Outros'];
+
+const FALLBACK_PALETTE_BG = ['bg-blue-500', 'bg-emerald-500', 'bg-purple-500', 'bg-orange-500', 'bg-pink-500', 'bg-cyan-500', 'bg-indigo-500', 'bg-rose-500', 'bg-amber-500', 'bg-teal-500', 'bg-violet-500', 'bg-fuchsia-500', 'bg-lime-600', 'bg-sky-500'];
+const FALLBACK_PALETTE_HEX = ['#3b82f6', '#10b981', '#a855f7', '#f97316', '#ec4899', '#06b6d4', '#6366f1', '#f43f5e', '#f59e0b', '#14b8a6', '#8b5cf6', '#d946ef', '#65a30d', '#0284c7'];
+
+export const getBaseColorClass = (baseName?: string) => {
+  if (!baseName) return 'bg-slate-500';
+  if (DEFAULT_BASE_COLORS[baseName]) return DEFAULT_BASE_COLORS[baseName];
+  let hash = 0;
+  for (let i = 0; i < baseName.length; i++) {
+    hash = baseName.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const idx = Math.abs(hash) % FALLBACK_PALETTE_BG.length;
+  return FALLBACK_PALETTE_BG[idx];
+};
+
+export const getBaseHexColor = (baseName?: string) => {
+  if (!baseName) return '#64748b';
+  if (DEFAULT_BASE_HEX_COLORS[baseName]) return DEFAULT_BASE_HEX_COLORS[baseName];
+  let hash = 0;
+  for (let i = 0; i < baseName.length; i++) {
+    hash = baseName.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const idx = Math.abs(hash) % FALLBACK_PALETTE_HEX.length;
+  return FALLBACK_PALETTE_HEX[idx];
+};
+
+const DEFAULT_TYPES: OccurrenceType[] = ['CFTV', 'Checklist do Setor', 'Monitoramento', 'Ocorrência', 'Orientação', 'Outros'];
+
+export const getTodayDateTimeLocalStr = (hoursOffset = 12) => {
+  const d = new Date();
+  d.setHours(d.getHours() + hoursOffset);
+  d.setMinutes(0, 0, 0);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+export const getMinDateTimeLocalStr = () => {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+export const formatRetentionLabel = (keep?: string) => {
+  if (!keep) return '';
+  const clean = String(keep).trim();
+  if (!clean) return '';
+  if (clean.toLowerCase() === 'indefinite' || clean.toLowerCase() === 'indeterminado') {
+    return 'Indeterminado';
+  }
+  try {
+    if (clean.includes('T')) {
+      const [datePart, timePart] = clean.split('T');
+      const [y, m, d] = datePart.split('-');
+      const [hour, min] = timePart.split(':');
+      if (d && m && y && hour && min) {
+        return `${d}/${m}/${y} às ${hour}:${min}`;
+      }
+    } else if (clean.includes('-')) {
+      const [y, m, d] = clean.split('-');
+      if (d && m && y) {
+        return `${d}/${m}/${y}`;
+      }
+    }
+  } catch {}
+  return clean;
+};
 
 const getActualDescription = (desc?: string) => {
   if (!desc || typeof desc !== 'string') return '';
@@ -216,6 +296,31 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [selectedDateOccs, setSelectedDateOccs] = useState<{date: string, occs: ShiftOccurrence[]} | null>(null);
   
+  // Custom Bases and Types state (persisted locally and synced with data)
+  const [customBases, setCustomBases] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('risel_shift_custom_bases');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [customTypes, setCustomTypes] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('risel_shift_custom_types');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Modal state for adding custom Base and Type
+  const [showAddBaseModal, setShowAddBaseModal] = useState(false);
+  const [newBaseInput, setNewBaseInput] = useState('');
+  const [showAddTypeModal, setShowAddTypeModal] = useState(false);
+  const [newTypeInput, setNewTypeInput] = useState('');
+
   // Form state
   const [type, setType] = useState<OccurrenceType>('Monitoramento');
   const [base, setBase] = useState('Geral');
@@ -232,6 +337,69 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
   const isDenyUser = userName?.toUpperCase().trim() === 'DENY' || userRole === 'admin';
   const getTodayDateStr = () => new Date().toISOString().split('T')[0];
 
+  // Dynamic available bases list (Defaults + Custom + Existing in data)
+  const availableBases = useMemo(() => {
+    const fromOccs = (occurrences || []).concat(history || []).concat(auditOccurrences || []).map(o => o?.base).filter(Boolean);
+    const combined = Array.from(new Set([...DEFAULT_BASES, ...customBases, ...fromOccs]));
+    return combined.sort((a, b) => {
+      if (a === 'Geral') return 1;
+      if (b === 'Geral') return -1;
+      return a.localeCompare(b, 'pt-BR', { sensitivity: 'base' });
+    });
+  }, [customBases, occurrences, history, auditOccurrences]);
+
+  // Dynamic available types list (Defaults + Custom + Existing in data)
+  const availableTypes = useMemo(() => {
+    const fromOccs = (occurrences || []).concat(history || []).concat(auditOccurrences || []).map(o => o?.type).filter(Boolean);
+    const combined = Array.from(new Set([...DEFAULT_TYPES, ...customTypes, ...fromOccs]));
+    return combined.sort((a, b) => {
+      if (a === 'Checklist do Setor') return -1;
+      if (b === 'Checklist do Setor') return 1;
+      return a.localeCompare(b, 'pt-BR', { sensitivity: 'base' });
+    });
+  }, [customTypes, occurrences, history, auditOccurrences]);
+
+  const handleAddNewBase = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const clean = newBaseInput.trim();
+    if (!clean) return;
+    
+    // Capitalize properly
+    const formatted = clean.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+    
+    if (!customBases.includes(formatted) && !DEFAULT_BASES.includes(formatted)) {
+      const updated = [...customBases, formatted];
+      setCustomBases(updated);
+      try {
+        localStorage.setItem('risel_shift_custom_bases', JSON.stringify(updated));
+      } catch {}
+    }
+    setBase(formatted);
+    setNewBaseInput('');
+    setShowAddBaseModal(false);
+    showMessage(`Base "${formatted}" cadastrada com sucesso!`, 'success');
+  };
+
+  const handleAddNewType = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const clean = newTypeInput.trim();
+    if (!clean) return;
+    
+    const formatted = clean.charAt(0).toUpperCase() + clean.slice(1);
+    
+    if (!customTypes.includes(formatted) && !DEFAULT_TYPES.includes(formatted)) {
+      const updated = [...customTypes, formatted];
+      setCustomTypes(updated);
+      try {
+        localStorage.setItem('risel_shift_custom_types', JSON.stringify(updated));
+      } catch {}
+    }
+    setType(formatted as OccurrenceType);
+    setNewTypeInput('');
+    setShowAddTypeModal(false);
+    showMessage(`Tipo "${formatted}" cadastrado com sucesso!`, 'success');
+  };
+
   const getRetentionStatus = (occ?: ShiftOccurrence) => {
     if (!occ || !occ.keepUntil) return { isFixed: false, isExpiringToday: false, isExpired: false, isIndefinite: false, label: '' };
     const keep = String(occ.keepUntil || '').trim();
@@ -239,27 +407,32 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
     if (keep.toLowerCase() === 'indefinite' || keep.toLowerCase() === 'indeterminado') {
       return { isFixed: true, isExpiringToday: false, isExpired: false, isIndefinite: true, label: 'Indeterminado' };
     }
-    const today = getTodayDateStr();
-    const isToday = keep === today;
-    const isExpired = today > keep;
-    
-    let formattedLabel = keep;
-    try {
-      if (keep.includes('-')) {
-        const [y, m, d] = keep.split('-');
-        if (y && m && d) formattedLabel = `${d}/${m}/${y}`;
-      }
-    } catch {
-      formattedLabel = keep;
+
+    const now = new Date();
+    const todayStr = getTodayDateStr();
+    let targetTime = 0;
+    let targetDateStr = '';
+
+    if (keep.includes('T')) {
+      const parsed = new Date(keep);
+      targetTime = isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+      targetDateStr = keep.split('T')[0];
+    } else if (keep.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const parsed = new Date(keep + 'T23:59:59');
+      targetTime = isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+      targetDateStr = keep;
     }
+
+    const isExpired = targetTime > 0 ? now.getTime() > targetTime : false;
+    const isExpiringToday = (todayStr === targetDateStr) || isExpired;
 
     return {
       isFixed: true,
-      isExpiringToday: isToday || isExpired,
+      isExpiringToday,
       isExpired,
       isIndefinite: false,
       targetDate: keep,
-      label: formattedLabel
+      label: formatRetentionLabel(keep)
     };
   };
 
@@ -367,7 +540,7 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
     // 1. Ocorrências registradas especificamente para este turno e data
     const currentShiftOccs = allData.filter(o => o && o.date === shiftDate && o.shift === shift && !o.finalized);
     
-    // 2. Ocorrências fixas ativas (indeterminadas ou com data limite >= shiftDate)
+    // 2. Ocorrências fixas ativas (indeterminadas ou com data/hora limite vigente)
     const fixedOccs = allData.filter(o => {
       if (!o || !o.keepUntil) return false;
       if (o.type === 'Checklist do Setor') return false;
@@ -375,10 +548,9 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
       const keep = String(o.keepUntil || '').trim();
       if (!keep) return false;
       if (keep.toLowerCase() === 'indefinite' || keep.toLowerCase() === 'indeterminado') return true;
-      if (keep.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        return shiftDate <= keep;
-      }
-      return false;
+
+      const status = getRetentionStatus(o);
+      return !status.isExpired;
     });
 
     const mergedMap = new Map<string, ShiftOccurrence>();
@@ -715,9 +887,9 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
       }
     });
 
-    // Collect all bases present in the data + the standard BASES
+    // Collect all bases present in the data + available bases
     const basesInData = Array.from(new Set(data.filter(o => o.type !== 'Orientação' && o.type !== 'Checklist do Setor').map(o => o.base)));
-    const combinedBases = Array.from(new Set([...BASES, ...basesInData]));
+    const combinedBases = Array.from(new Set([...availableBases, ...basesInData]));
 
     // Sort bases alphabetically, but keep 'Geral' at the end if it exists
     const allBases = combinedBases.sort((a, b) => {
@@ -823,9 +995,9 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
       }
     });
 
-    // Collect all bases present in the data + the standard BASES
+    // Collect all bases present in the data + available bases
     const basesInData = Array.from(new Set(data.filter(o => o.type !== 'Orientação' && o.type !== 'Checklist do Setor').map(o => o.base)));
-    const combinedBases = Array.from(new Set([...BASES, ...basesInData]));
+    const combinedBases = Array.from(new Set([...availableBases, ...basesInData]));
 
     // Sort bases alphabetically, but keep 'Geral' at the end if it exists
     const allBases = combinedBases.sort((a, b) => {
@@ -846,7 +1018,7 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
 
     allBases.forEach(b => {
       const baseOccs = groupedByBase[b] || [];
-      const baseColor = BASE_HEX_COLORS[b] || '#64748b';
+      const baseColor = getBaseHexColor(b);
       
       html += `
         <tr>
@@ -1314,13 +1486,23 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
               <form onSubmit={handleAddOccurrence} className="p-4 space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Tipo</label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Tipo</label>
+                      <button
+                        type="button"
+                        onClick={() => { setNewTypeInput(''); setShowAddTypeModal(true); }}
+                        className="text-[10px] font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-1.5 py-0.5 rounded transition-all flex items-center gap-0.5"
+                        title="Cadastrar novo tipo"
+                      >
+                        <Plus size={10} /> Novo
+                      </button>
+                    </div>
                     <select 
                       value={type}
                       onChange={(e) => setType(e.target.value as OccurrenceType)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all"
                     >
-                      {TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      {availableTypes.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </div>
                   {type === 'Checklist do Setor' ? (
@@ -1349,7 +1531,7 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                         </label>
                         <label className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 p-1 rounded transition-colors">
                           <input type="checkbox" checked={checklistAlertasRastreador} onChange={e => setChecklistAlertasRastreador(e.target.checked)} className="w-4 h-4 text-emerald-500 rounded border-slate-300 focus:ring-emerald-500" />
-                          <Map size={14} className="text-slate-400" />
+                          <MapIcon size={14} className="text-slate-400" />
                           <span className="text-xs font-medium text-slate-700">Alertas Rastreador Tratados</span>
                         </label>
                         <label className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 p-1 rounded transition-colors">
@@ -1361,13 +1543,23 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                     </div>
                   ) : (
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Base</label>
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Base</label>
+                        <button
+                          type="button"
+                          onClick={() => { setNewBaseInput(''); setShowAddBaseModal(true); }}
+                          className="text-[10px] font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-1.5 py-0.5 rounded transition-all flex items-center gap-0.5"
+                          title="Cadastrar nova base"
+                        >
+                          <Plus size={10} /> Nova
+                        </button>
+                      </div>
                       <select 
                         value={base}
                         onChange={(e) => setBase(e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all"
                       >
-                        {BASES.map(b => <option key={b} value={b}>{b}</option>)}
+                        {availableBases.map(b => <option key={b} value={b}>{b}</option>)}
                       </select>
                     </div>
                   )}
@@ -1401,9 +1593,7 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                         onClick={() => {
                           setKeepUntilType('date');
                           if (!keepUntilDate) {
-                            const d = new Date();
-                            d.setDate(d.getDate() + 1);
-                            setKeepUntilDate(d.toISOString().split('T')[0]);
+                            setKeepUntilDate(getTodayDateTimeLocalStr(12));
                           }
                         }}
                         className={`px-2 py-1.5 rounded-lg text-xs font-bold transition-all border text-center flex items-center justify-center gap-1 ${
@@ -1413,7 +1603,7 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                         }`}
                       >
                         <CalendarIcon size={12} />
-                        <span>Data limite</span>
+                        <span>Data / Hora limite</span>
                       </button>
 
                       <button
@@ -1430,14 +1620,14 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                     </div>
 
                     {keepUntilType === 'date' && (
-                      <div className="pt-1 flex items-center gap-2">
-                        <label className="text-[11px] font-bold text-slate-600 shrink-0">Até o dia:</label>
+                      <div className="pt-1 flex flex-col gap-1">
+                        <label className="text-[11px] font-bold text-slate-600">Até o dia e horário:</label>
                         <input 
-                          type="date" 
-                          min={getTodayDateStr()}
+                          type="datetime-local" 
+                          min={getMinDateTimeLocalStr()}
                           value={keepUntilDate}
                           onChange={(e) => setKeepUntilDate(e.target.value)}
-                          className="flex-1 bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                          className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-emerald-500/20 outline-none"
                         />
                       </div>
                     )}
@@ -1832,7 +2022,7 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                                   <div className="grid grid-cols-1 gap-4">
                                     {sortedBases.map(base => (
                                       <div key={base} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-                                        <div className={`${BASE_COLORS[base] || 'bg-slate-500'} px-3 py-1 flex items-center justify-between`}>
+                                        <div className={`${getBaseColorClass(base)} px-3 py-1 flex items-center justify-between`}>
                                           <span className="text-[9px] font-black text-white uppercase tracking-wider">{base}</span>
                                         </div>
                                         <div className="p-2 space-y-2">
@@ -1851,7 +2041,7 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                                                 <div className="flex items-center gap-2">
                                                   {occ.keepUntil && (
                                                     <span className="text-[8px] font-bold text-amber-600 bg-amber-50 px-1 py-0.5 rounded flex items-center gap-0.5">
-                                                      <Pin size={8} /> {occ.keepUntil === 'indefinite' ? 'Indeterminado' : occ.keepUntil}
+                                                      <Pin size={8} /> {formatRetentionLabel(occ.keepUntil)}
                                                     </span>
                                                   )}
                                                   <span className="text-[7px] font-bold text-slate-300">{occ.operator} • {formatTimeSafe(occ.createdAt)}</span>
@@ -2137,7 +2327,7 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                       <div className="grid grid-cols-1 gap-6">
                         {sortedBases.map(base => (
                           <div key={base} className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all group relative overflow-hidden flex flex-col">
-                            <div className={`${BASE_COLORS[base] || 'bg-slate-500'} px-4 py-2 flex items-center justify-between`}>
+                            <div className={`${getBaseColorClass(base)} px-4 py-2 flex items-center justify-between`}>
                               <span className="text-xs font-black text-white uppercase tracking-widest">{base}</span>
                             </div>
                             <div className="p-5 space-y-5">
@@ -2193,7 +2383,7 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                                       </span>
                                       {occ.keepUntil && (
                                         <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded flex items-center gap-1">
-                                          <Pin size={10} /> {occ.keepUntil === 'indefinite' ? 'Indeterminado' : occ.keepUntil}
+                                          <Pin size={10} /> {formatRetentionLabel(occ.keepUntil)}
                                         </span>
                                       )}
                                     </div>
@@ -2291,9 +2481,7 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                     onClick={() => {
                       setRenewKeepType('date');
                       if (!renewKeepDate) {
-                        const d = new Date();
-                        d.setDate(d.getDate() + 3);
-                        setRenewKeepDate(d.toISOString().split('T')[0]);
+                        setRenewKeepDate(getTodayDateTimeLocalStr(12));
                       }
                     }}
                     className={`p-2.5 rounded-xl text-xs font-bold transition-all border text-center ${
@@ -2302,7 +2490,7 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                         : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
                     }`}
                   >
-                    Nova Data
+                    Nova Data/Hora
                   </button>
                   <button
                     type="button"
@@ -2318,14 +2506,14 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                 </div>
 
                 {renewKeepType === 'date' && (
-                  <div className="pt-2 flex items-center gap-2">
-                    <label className="text-xs font-bold text-slate-600 shrink-0">Prorrogar até:</label>
+                  <div className="pt-2 flex flex-col gap-1">
+                    <label className="text-xs font-bold text-slate-600 shrink-0">Prorrogar até dia e horário:</label>
                     <input 
-                      type="date"
-                      min={getTodayDateStr()}
+                      type="datetime-local"
+                      min={getMinDateTimeLocalStr()}
                       value={renewKeepDate}
                       onChange={(e) => setRenewKeepDate(e.target.value)}
-                      className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-amber-500/20 outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-amber-500/20 outline-none"
                     />
                   </div>
                 )}
@@ -2350,6 +2538,126 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                 Confirmar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Adicionar Nova Base */}
+      {showAddBaseModal && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white max-w-sm w-full rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200">
+            <div className="p-5 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-white/20 rounded-xl">
+                  <MapPin size={20} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black leading-tight">Nova Base</h3>
+                  <p className="text-emerald-100 text-xs font-medium">Cadastrar nova base no sistema</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowAddBaseModal(false)}
+                className="p-1.5 bg-white/20 hover:bg-white/30 rounded-xl transition-all"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddNewBase} className="p-5 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-600">Nome da Base:</label>
+                <input 
+                  type="text"
+                  autoFocus
+                  placeholder="Ex: São Paulo, Campinas, Curitiba..."
+                  value={newBaseInput}
+                  onChange={(e) => setNewBaseInput(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                />
+                <p className="text-[10px] text-slate-400">
+                  A base será adicionada em ordem alfabética e ficará disponível para os próximos registros.
+                </p>
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
+                <button 
+                  type="button"
+                  onClick={() => setShowAddBaseModal(false)}
+                  className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-200 rounded-xl text-xs transition-all"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit"
+                  disabled={!newBaseInput.trim()}
+                  className="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-black rounded-xl text-xs shadow-md shadow-emerald-500/20 transition-all disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <Plus size={14} />
+                  Adicionar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Adicionar Novo Tipo */}
+      {showAddTypeModal && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white max-w-sm w-full rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200">
+            <div className="p-5 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-white/20 rounded-xl">
+                  <ClipboardCheck size={20} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black leading-tight">Novo Tipo</h3>
+                  <p className="text-emerald-100 text-xs font-medium">Cadastrar categoria de ocorrência</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowAddTypeModal(false)}
+                className="p-1.5 bg-white/20 hover:bg-white/30 rounded-xl transition-all"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddNewType} className="p-5 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-600">Nome do Tipo:</label>
+                <input 
+                  type="text"
+                  autoFocus
+                  placeholder="Ex: Ronda, Portaria, Ronda Noturna..."
+                  value={newTypeInput}
+                  onChange={(e) => setNewTypeInput(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-800 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                />
+                <p className="text-[10px] text-slate-400">
+                  O tipo ficará salvo e disponível no menu de seleção de ocorrências.
+                </p>
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
+                <button 
+                  type="button"
+                  onClick={() => setShowAddTypeModal(false)}
+                  className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-200 rounded-xl text-xs transition-all"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit"
+                  disabled={!newTypeInput.trim()}
+                  className="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-black rounded-xl text-xs shadow-md shadow-emerald-500/20 transition-all disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <Plus size={14} />
+                  Adicionar
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -138,7 +138,7 @@ export interface InternalTicket {
   attachmentName: string;
 }
 
-export type OccurrenceType = 'Monitoramento' | 'Ocorrência' | 'Orientação' | 'Outros' | 'CFTV' | 'Checklist do Setor' | 'Análise de Viagem';
+export type OccurrenceType = 'Monitoramento' | 'Ocorrência' | 'Orientação' | 'Outros' | 'CFTV' | 'Checklist do Setor' | 'Análise de Viagem' | (string & {});
 
 export interface BolaPreta {
   id: string;
