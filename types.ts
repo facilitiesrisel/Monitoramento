@@ -215,4 +215,5 @@ export interface ShiftOccurrence {
   operator: string;
   finalized: boolean;
   createdAt: string;
+  keepUntil?: string; // 'YYYY-MM-DD' | 'indefinite' | ''
 }

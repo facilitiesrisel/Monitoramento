@@ -323,15 +323,16 @@ export const loadShiftOccurrencesData = async (cacheBust = true): Promise<void> 
           if (shiftData && !shiftData.startsWith('<!D')) {
               const rows = parseCSV(shiftData);
               shiftOccurrences = rows.slice(1).map(r => ({
-                  id: r[0],
+                  id: r[0] || `occ-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
                   date: normalizeDate(r[1]),
-                  shift: r[2] as any,
-                  type: r[3] as any,
-                  base: r[4],
-                  description: r[5],
-                  operator: r[6],
-                  finalized: String(r[7]).trim().toUpperCase() === 'TRUE',
-                  createdAt: r[8]
+                  shift: (r[2] || 'Diurno') as any,
+                  type: (r[3] || 'Monitoramento') as any,
+                  base: r[4] || 'Geral',
+                  description: r[5] || '',
+                  operator: r[6] || '',
+                  finalized: String(r[7] || '').trim().toUpperCase() === 'TRUE',
+                  createdAt: r[8] || new Date().toISOString(),
+                  keepUntil: r[9] ? String(r[9]).trim() : ''
               }));
           }
       }
@@ -1427,17 +1428,21 @@ export const deleteOperator = async (id: string) => {
 // --- SHIFT HANDOVER FUNCTIONS ---
 export const getShiftOccurrences = (filters?: { date?: string; operator?: string; finalized?: boolean; includeDeleted?: boolean; shift?: 'Diurno' | 'Noturno' }) => {
     let filtered = [...shiftOccurrences];
-    if (filters?.date) filtered = filtered.filter(o => o.date === filters.date);
-    if (filters?.operator) filtered = filtered.filter(o => o.operator === filters.operator);
-    if (filters?.finalized !== undefined) filtered = filtered.filter(o => o.finalized === filters.finalized);
-    if (filters?.shift) filtered = filtered.filter(o => o.shift === filters.shift);
+    if (filters?.date) filtered = filtered.filter(o => o && o.date === filters.date);
+    if (filters?.operator) filtered = filtered.filter(o => o && o.operator === filters.operator);
+    if (filters?.finalized !== undefined) filtered = filtered.filter(o => o && o.finalized === filters.finalized);
+    if (filters?.shift) filtered = filtered.filter(o => o && o.shift === filters.shift);
     
-    // Filtra itens excluídos por padrão
+    // Filtra itens excluídos por padrão com validação defensiva
     if (!filters?.includeDeleted) {
-        filtered = filtered.filter(o => !o.description.includes('[EXCLUÍDO'));
+        filtered = filtered.filter(o => o && (typeof o.description !== 'string' || !o.description.includes('[EXCLUÍDO')));
     }
     
-    return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return filtered.sort((a, b) => {
+        const timeA = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const timeB = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
+    });
 };
 
 export const addShiftOccurrence = async (occ: Omit<ShiftOccurrence, 'id' | 'createdAt' | 'finalized'>) => {
@@ -1464,7 +1469,8 @@ export const addShiftOccurrence = async (occ: Omit<ShiftOccurrence, 'id' | 'crea
                 newOcc.description,
                 newOcc.operator,
                 'FALSE',
-                newOcc.createdAt
+                newOcc.createdAt,
+                newOcc.keepUntil || ''
             ]
         });
     } finally {
@@ -1493,7 +1499,8 @@ export const updateShiftOccurrence = async (id: string, updates: Partial<ShiftOc
                 occ.description,
                 occ.operator,
                 occ.finalized ? 'TRUE' : 'FALSE',
-                occ.createdAt
+                occ.createdAt,
+                occ.keepUntil || ''
             ]
         });
     } finally {

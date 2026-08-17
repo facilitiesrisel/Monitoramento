@@ -27,8 +27,11 @@ import {
   Sparkles,
   LayoutDashboard,
   ThermometerSnowflake,
-  Map,
-  Video
+  Map as MapIcon,
+  Video,
+  Pin,
+  Lock,
+  Trash2
 } from 'lucide-react';
 import { 
   getShiftOccurrences, 
@@ -77,16 +80,49 @@ const BASE_HEX_COLORS: Record<string, string> = {
 };
 const TYPES: OccurrenceType[] = ['CFTV', 'Checklist do Setor', 'Monitoramento', 'Ocorrência', 'Orientação', 'Outros'];
 
-const getActualDescription = (desc: string) => desc.includes('|||AUDIT|||') ? desc.split('|||AUDIT|||')[0] : desc;
-const getAuditLog = (desc: string) => desc.includes('|||AUDIT|||') ? desc.split('|||AUDIT|||')[1] : '';
+const getActualDescription = (desc?: string) => {
+  if (!desc || typeof desc !== 'string') return '';
+  return desc.includes('|||AUDIT|||') ? desc.split('|||AUDIT|||')[0] : desc;
+};
 
-export const splitDescriptionLines = (desc: string): string[] => {
-  if (!desc) return [];
+const getAuditLog = (desc?: string) => {
+  if (!desc || typeof desc !== 'string') return '';
+  return desc.includes('|||AUDIT|||') ? desc.split('|||AUDIT|||')[1] : '';
+};
+
+export const formatTimeSafe = (timeStr?: string) => {
+  if (!timeStr) return '--:--';
+  try {
+    const d = new Date(timeStr);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    }
+    const match = String(timeStr).match(/(\d{1,2}):(\d{2})/);
+    if (match) {
+      return `${match[1].padStart(2, '0')}:${match[2]}`;
+    }
+  } catch {}
+  return '--:--';
+};
+
+export const formatDateTimeSafe = (timeStr?: string) => {
+  if (!timeStr) return '--';
+  try {
+    const d = new Date(timeStr);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleString('pt-BR');
+    }
+  } catch {}
+  return String(timeStr || '--');
+};
+
+export const splitDescriptionLines = (desc?: string): string[] => {
+  if (!desc || typeof desc !== 'string') return [];
   const rawLines = desc.split(/\r?\n/);
   const lines: string[] = [];
 
   for (let line of rawLines) {
-    let trimmed = line.trim();
+    let trimmed = (line || '').trim();
     if (!trimmed) continue;
     // Strip leading bullet characters if present so we can standardize bullet topics
     trimmed = trimmed.replace(/^[-•*–—]\s*/, '');
@@ -98,7 +134,7 @@ export const splitDescriptionLines = (desc: string): string[] => {
   return lines;
 };
 
-const renderFormattedDescription = (descText: string, isHistory = false) => {
+const renderFormattedDescription = (descText?: string, isHistory = false) => {
   const lines = splitDescriptionLines(descText);
   if (lines.length === 0) return <span className="text-slate-400 italic">Sem informação</span>;
   
@@ -131,16 +167,19 @@ export const encodeChecklist = (
   alertasCFTV: boolean,
   desc: string
 ) => {
-  return `[CHECKLIST] Cafeteira limpa: ${cafeteira} | Limpeza e conservação da Sala: ${limpeza} | Organização das Mesas: ${organizacao} | Ar condicionado: ${arCondicionado} | Alertas Rastreador Tratados: ${alertasRastreador} | Alertas CFTV Tratados: ${alertasCFTV} | Descrição: ${desc}`;
+  return `[CHECKLIST] Cafeteira limpa: ${cafeteira} | Limpeza e conservação da Sala: ${limpeza} | Organização das Mesas: ${organizacao} | Ar condicionado: ${arCondicionado} | Alertas Rastreador Tratados: ${alertasRastreador} | Alertas CFTV Tratados: ${alertasCFTV} | Descrição: ${desc || ''}`;
 };
 
-export const decodeChecklist = (desc: string) => {
-  if (desc.startsWith('[CHECKLIST]')) {
+export const decodeChecklist = (desc?: string) => {
+  if (!desc || typeof desc !== 'string' || !desc.startsWith('[CHECKLIST]')) {
+    return null;
+  }
+  try {
     const parts = desc.replace('[CHECKLIST] ', '').split(' | ');
     if (parts.length >= 4) {
-      const cafeteira = parts[0].split(': ')[1] === 'true';
-      const limpeza = parts[1].split(': ')[1] === 'true';
-      const organizacao = parts[2].split(': ')[1] === 'true';
+      const cafeteira = parts[0]?.split(': ')[1] === 'true';
+      const limpeza = parts[1]?.split(': ')[1] === 'true';
+      const organizacao = parts[2]?.split(': ')[1] === 'true';
       
       let arCondicionado = false;
       let alertasRastreador = false;
@@ -148,16 +187,18 @@ export const decodeChecklist = (desc: string) => {
       let description = '';
 
       if (parts.length >= 7) {
-        arCondicionado = parts[3].split(': ')[1] === 'true';
-        alertasRastreador = parts[4].split(': ')[1] === 'true';
-        alertasCFTV = parts[5].split(': ')[1] === 'true';
-        description = parts[6].split(': ')[1] || '';
+        arCondicionado = parts[3]?.split(': ')[1] === 'true';
+        alertasRastreador = parts[4]?.split(': ')[1] === 'true';
+        alertasCFTV = parts[5]?.split(': ')[1] === 'true';
+        description = parts[6]?.split(': ')[1] || '';
       } else {
-        description = parts[3].split(': ')[1] || '';
+        description = parts[3]?.split(': ')[1] || '';
       }
 
       return { cafeteira, limpeza, organizacao, arCondicionado, alertasRastreador, alertasCFTV, description };
     }
+  } catch (e) {
+    console.error("Error decoding checklist:", e);
   }
   return null;
 };
@@ -179,6 +220,60 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
   const [type, setType] = useState<OccurrenceType>('Monitoramento');
   const [base, setBase] = useState('Geral');
   const [description, setDescription] = useState('');
+  const [keepUntilType, setKeepUntilType] = useState<'none' | 'date' | 'indefinite'>('none');
+  const [keepUntilDate, setKeepUntilDate] = useState<string>('');
+
+  // Retention Renewal Modal State
+  const [renewOccModal, setRenewOccModal] = useState<ShiftOccurrence | null>(null);
+  const [renewKeepType, setRenewKeepType] = useState<'none' | 'date' | 'indefinite'>('date');
+  const [renewKeepDate, setRenewKeepDate] = useState<string>('');
+
+  // Deny permission check
+  const isDenyUser = userName?.toUpperCase().trim() === 'DENY' || userRole === 'admin';
+  const getTodayDateStr = () => new Date().toISOString().split('T')[0];
+
+  const getRetentionStatus = (occ?: ShiftOccurrence) => {
+    if (!occ || !occ.keepUntil) return { isFixed: false, isExpiringToday: false, isExpired: false, isIndefinite: false, label: '' };
+    const keep = String(occ.keepUntil || '').trim();
+    if (!keep) return { isFixed: false, isExpiringToday: false, isExpired: false, isIndefinite: false, label: '' };
+    if (keep.toLowerCase() === 'indefinite' || keep.toLowerCase() === 'indeterminado') {
+      return { isFixed: true, isExpiringToday: false, isExpired: false, isIndefinite: true, label: 'Indeterminado' };
+    }
+    const today = getTodayDateStr();
+    const isToday = keep === today;
+    const isExpired = today > keep;
+    
+    let formattedLabel = keep;
+    try {
+      if (keep.includes('-')) {
+        const [y, m, d] = keep.split('-');
+        if (y && m && d) formattedLabel = `${d}/${m}/${y}`;
+      }
+    } catch {
+      formattedLabel = keep;
+    }
+
+    return {
+      isFixed: true,
+      isExpiringToday: isToday || isExpired,
+      isExpired,
+      isIndefinite: false,
+      targetDate: keep,
+      label: formattedLabel
+    };
+  };
+
+  const canUserDelete = (occ?: ShiftOccurrence) => {
+    if (!occ) return true;
+    if (isDenyUser) return true;
+    if (!occ.keepUntil) return true;
+    const status = getRetentionStatus(occ);
+    if (status.isIndefinite) return false;
+    // Se hoje for a data limite ou já expirou, qualquer operador pode excluir
+    if (status.isExpiringToday || status.isExpired) return true;
+    // Antes da data limite, apenas o Deny pode excluir
+    return false;
+  };
   
   // Checklist state
   const [checklistCafeteira, setChecklistCafeteira] = useState(false);
@@ -268,21 +363,55 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
   }, [activeView, shift, shiftDate]);
 
   const loadCurrentOccurrences = () => {
-    const data = getShiftOccurrences({ 
-      date: shiftDate, 
-      finalized: false,
-      shift: shift
+    const allData = getShiftOccurrences() || [];
+    // 1. Ocorrências registradas especificamente para este turno e data
+    const currentShiftOccs = allData.filter(o => o && o.date === shiftDate && o.shift === shift && !o.finalized);
+    
+    // 2. Ocorrências fixas ativas (indeterminadas ou com data limite >= shiftDate)
+    const fixedOccs = allData.filter(o => {
+      if (!o || !o.keepUntil) return false;
+      if (o.type === 'Checklist do Setor') return false;
+      
+      const keep = String(o.keepUntil || '').trim();
+      if (!keep) return false;
+      if (keep.toLowerCase() === 'indefinite' || keep.toLowerCase() === 'indeterminado') return true;
+      if (keep.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        return shiftDate <= keep;
+      }
+      return false;
     });
-    setOccurrences(data);
+
+    const mergedMap = new Map<string, ShiftOccurrence>();
+    currentShiftOccs.forEach(o => {
+      if (o && o.id) mergedMap.set(o.id, o);
+    });
+    fixedOccs.forEach(o => {
+      if (o && o.id && !mergedMap.has(o.id)) {
+        mergedMap.set(o.id, o);
+      }
+    });
+
+    const list: ShiftOccurrence[] = (Array.from(mergedMap.values()) as ShiftOccurrence[]).sort((a: ShiftOccurrence, b: ShiftOccurrence) => {
+      const aFixed = Boolean(a?.keepUntil);
+      const bFixed = Boolean(b?.keepUntil);
+      if (aFixed && !bFixed) return -1;
+      if (!aFixed && bFixed) return 1;
+      const timeA = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return (isNaN(timeB) ? 0 : timeB) - (isNaN(timeA) ? 0 : timeA);
+    });
+
+    setOccurrences(list);
   };
 
   const loadHistory = () => {
-    const allData = getShiftOccurrences();
+    const allData = getShiftOccurrences() || [];
     const currentInfo = getCurrentShiftInfo();
     
     // History should include explicitly finalized shifts, 
     // AND any shift that is from a past date or different shift period
     const historyData = allData.filter(o => {
+      if (!o) return false;
       // Se foi finalizado, deve aparecer no histórico
       if (o.finalized) return true;
       
@@ -299,9 +428,9 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
 
   const loadAudit = () => {
     // Busca todas as ocorrências incluindo as excluídas
-    const allData = getShiftOccurrences({ includeDeleted: true });
+    const allData = getShiftOccurrences({ includeDeleted: true }) || [];
     // Filtra apenas as que possuem log de auditoria
-    const auditData = allData.filter(o => o.description.includes('|||AUDIT|||'));
+    const auditData = allData.filter(o => o && typeof o.description === 'string' && o.description.includes('|||AUDIT|||'));
     setAuditOccurrences(auditData);
   };
 
@@ -327,21 +456,34 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
       return;
     }
 
+    let finalKeepUntil = '';
+    if (type !== 'Checklist do Setor') {
+      if (keepUntilType === 'indefinite') {
+        finalKeepUntil = 'indefinite';
+      } else if (keepUntilType === 'date' && keepUntilDate) {
+        finalKeepUntil = keepUntilDate;
+      }
+    }
+
     setIsSaving(true);
     try {
       if (editingId) {
-        const originalOcc = occurrences.find(o => o.id === editingId) || history.find(o => o.id === editingId);
+        const originalOcc = occurrences.find(o => o.id === editingId) || history.find(o => o.id === editingId) || auditOccurrences.find(o => o.id === editingId);
         const oldDesc = originalOcc ? getActualDescription(originalOcc.description) : '';
         const existingAudit = originalOcc ? getAuditLog(originalOcc.description) : '';
         
         const now = new Date().toLocaleString('pt-BR');
         let newAudit = existingAudit;
         
-        if (oldDesc !== finalDescToSave || originalOcc?.type !== type || originalOcc?.base !== finalBaseToSave || originalOcc?.shift !== shift) {
+        if (oldDesc !== finalDescToSave || originalOcc?.type !== type || originalOcc?.base !== finalBaseToSave || originalOcc?.shift !== shift || (originalOcc?.keepUntil || '') !== finalKeepUntil) {
             newAudit += `\n[Editado por ${userName} em ${now}]`;
             if (oldDesc !== finalDescToSave) newAudit += `\n- Descrição alterada de: "${oldDesc}"`;
             if (originalOcc?.type !== type) newAudit += `\n- Tipo alterado de: ${originalOcc?.type}`;
             if (originalOcc?.base !== finalBaseToSave) newAudit += `\n- Base alterada de: ${originalOcc?.base}`;
+            if ((originalOcc?.keepUntil || '') !== finalKeepUntil) {
+              const keepLabel = finalKeepUntil === 'indefinite' ? 'Indeterminado' : (finalKeepUntil ? finalKeepUntil : 'Apenas no turno');
+              newAudit += `\n- Retenção alterada para: ${keepLabel}`;
+            }
         }
         
         const finalDescription = newAudit ? `${finalDescToSave}|||AUDIT|||${newAudit}` : finalDescToSave;
@@ -350,7 +492,8 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
           type,
           base: finalBaseToSave,
           description: finalDescription,
-          shift
+          shift,
+          keepUntil: finalKeepUntil
         });
         setEditingId(null);
       } else {
@@ -360,10 +503,13 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
           type,
           base: finalBaseToSave,
           description: finalDescToSave,
-          operator: normalizeEvaluatorName(userName)
+          operator: normalizeEvaluatorName(userName),
+          keepUntil: finalKeepUntil
         });
       }
       setDescription('');
+      setKeepUntilType('none');
+      setKeepUntilDate('');
       setChecklistCafeteira(false);
       setChecklistLimpeza(false);
       setChecklistOrganizacao(false);
@@ -372,6 +518,7 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
       setChecklistAlertasCFTV(false);
       loadCurrentOccurrences();
       if (activeView === 'history') loadHistory();
+      if (activeView === 'audit') loadAudit();
     } catch (error) {
       console.error('Error saving occurrence:', error);
     } finally {
@@ -384,6 +531,17 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
     setType(occ.type);
     setBase(occ.base);
     
+    if (occ.keepUntil === 'indefinite' || occ.keepUntil === 'Indeterminado') {
+      setKeepUntilType('indefinite');
+      setKeepUntilDate('');
+    } else if (occ.keepUntil && occ.keepUntil.includes('-')) {
+      setKeepUntilType('date');
+      setKeepUntilDate(occ.keepUntil);
+    } else {
+      setKeepUntilType('none');
+      setKeepUntilDate('');
+    }
+
     const actualDesc = getActualDescription(occ.description);
     if (occ.type === 'Checklist do Setor') {
       const decoded = decodeChecklist(actualDesc);
@@ -411,6 +569,8 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
     setDescription('');
     setType('Monitoramento');
     setBase('Geral');
+    setKeepUntilType('none');
+    setKeepUntilDate('');
   };
 
   const handleFinalizeShift = async () => {
@@ -458,24 +618,77 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
     
     setIsLoading(true);
     try {
-      const occ = occurrences.find(o => o.id === id) || history.find(o => o.id === id);
+      const occ = occurrences.find(o => o.id === id) || history.find(o => o.id === id) || auditOccurrences.find(o => o.id === id);
       if (occ) {
           const now = new Date().toLocaleString('pt-BR');
           const existingAudit = getAuditLog(occ.description);
-          const newAudit = existingAudit + `\n[EXCLUÍDO por ${userName} em ${now}]`;
+          const keepInfo = occ.keepUntil ? ` (Item fixo até: ${occ.keepUntil === 'indefinite' ? 'Indeterminado' : occ.keepUntil})` : '';
+          const newAudit = existingAudit + `\n[EXCLUÍDO por ${userName} em ${now}${keepInfo}]`;
           const finalDescription = `${getActualDescription(occ.description)}|||AUDIT|||${newAudit}`;
           
           await updateShiftOccurrence(id, {
               description: finalDescription
           });
+          showMessage('Ocorrência excluída com sucesso.', 'success');
       }
       loadCurrentOccurrences();
       if (activeView === 'history') loadHistory();
+      if (activeView === 'audit') loadAudit();
     } catch (error) {
       console.error('Error deleting occurrence:', error);
       showMessage('Erro ao excluir ocorrência.', 'error');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleOpenRenewModal = (occ: ShiftOccurrence) => {
+    setRenewOccModal(occ);
+    if (occ.keepUntil === 'indefinite' || occ.keepUntil === 'Indeterminado') {
+      setRenewKeepType('indefinite');
+      setRenewKeepDate('');
+    } else if (occ.keepUntil && occ.keepUntil.includes('-')) {
+      setRenewKeepType('date');
+      const d = new Date();
+      d.setDate(d.getDate() + 3);
+      setRenewKeepDate(d.toISOString().split('T')[0]);
+    } else {
+      setRenewKeepType('date');
+      const d = new Date();
+      d.setDate(d.getDate() + 1);
+      setRenewKeepDate(d.toISOString().split('T')[0]);
+    }
+  };
+
+  const handleSaveRenew = async () => {
+    if (!renewOccModal) return;
+    setIsSaving(true);
+    try {
+      let newKeep = '';
+      if (renewKeepType === 'indefinite') newKeep = 'indefinite';
+      else if (renewKeepType === 'date' && renewKeepDate) newKeep = renewKeepDate;
+
+      const now = new Date().toLocaleString('pt-BR');
+      const existingAudit = getAuditLog(renewOccModal.description);
+      const keepText = newKeep === 'indefinite' ? 'Indeterminado' : (newKeep ? newKeep : 'Apenas hoje');
+      const newAudit = existingAudit + `\n[Retenção atualizada por ${userName} em ${now} para: ${keepText}]`;
+      const finalDescription = `${getActualDescription(renewOccModal.description)}|||AUDIT|||${newAudit}`;
+
+      await updateShiftOccurrence(renewOccModal.id, {
+        keepUntil: newKeep,
+        description: finalDescription
+      });
+
+      setRenewOccModal(null);
+      showMessage('Retenção da informação atualizada com sucesso!', 'success');
+      loadCurrentOccurrences();
+      if (activeView === 'history') loadHistory();
+      if (activeView === 'audit') loadAudit();
+    } catch (e) {
+      console.error(e);
+      showMessage('Erro ao atualizar retenção.', 'error');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -902,7 +1115,8 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
     );
   };
 
-  const historyByDate = history.reduce((acc, occ) => {
+  const historyByDate = (history || []).reduce((acc, occ) => {
+    if (!occ || !occ.date) return acc;
     const date = occ.date;
     if (!acc[date]) acc[date] = [];
     acc[date].push(occ);
@@ -1159,6 +1373,77 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                   )}
                 </div>
 
+                {type !== 'Checklist do Setor' && (
+                  <div className="space-y-2 bg-slate-50 border border-slate-200 rounded-xl p-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-1.5">
+                        <Pin size={12} className="text-emerald-600" />
+                        Manter informação até
+                      </label>
+                      <span className="text-[10px] text-slate-400 font-medium">Fixar em plantões futuros</span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => { setKeepUntilType('none'); setKeepUntilDate(''); }}
+                        className={`px-2 py-1.5 rounded-lg text-xs font-bold transition-all border text-center flex items-center justify-center gap-1 ${
+                          keepUntilType === 'none'
+                            ? 'bg-white border-emerald-500 text-emerald-700 shadow-sm'
+                            : 'bg-white/60 border-slate-200 text-slate-500 hover:bg-white'
+                        }`}
+                      >
+                        <span>Apenas turno</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setKeepUntilType('date');
+                          if (!keepUntilDate) {
+                            const d = new Date();
+                            d.setDate(d.getDate() + 1);
+                            setKeepUntilDate(d.toISOString().split('T')[0]);
+                          }
+                        }}
+                        className={`px-2 py-1.5 rounded-lg text-xs font-bold transition-all border text-center flex items-center justify-center gap-1 ${
+                          keepUntilType === 'date'
+                            ? 'bg-white border-emerald-500 text-emerald-700 shadow-sm'
+                            : 'bg-white/60 border-slate-200 text-slate-500 hover:bg-white'
+                        }`}
+                      >
+                        <CalendarIcon size={12} />
+                        <span>Data limite</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => { setKeepUntilType('indefinite'); setKeepUntilDate(''); }}
+                        className={`px-2 py-1.5 rounded-lg text-xs font-bold transition-all border text-center flex items-center justify-center gap-1 ${
+                          keepUntilType === 'indefinite'
+                            ? 'bg-white border-emerald-500 text-emerald-700 shadow-sm'
+                            : 'bg-white/60 border-slate-200 text-slate-500 hover:bg-white'
+                        }`}
+                      >
+                        <span>Indeterminado</span>
+                      </button>
+                    </div>
+
+                    {keepUntilType === 'date' && (
+                      <div className="pt-1 flex items-center gap-2">
+                        <label className="text-[11px] font-bold text-slate-600 shrink-0">Até o dia:</label>
+                        <input 
+                          type="date" 
+                          min={getTodayDateStr()}
+                          value={keepUntilDate}
+                          onChange={(e) => setKeepUntilDate(e.target.value)}
+                          className="flex-1 bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Descrição / Tópicos</label>
@@ -1240,78 +1525,144 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                   <p className="text-slate-400 text-sm font-medium">Nenhuma ocorrência registrada neste turno.</p>
                 </div>
               ) : (
-                occurrences.map((occ, idx) => (
-                  <div key={`${occ.id}-${idx}`} className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm hover:shadow-md transition-all group">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="space-y-2 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md text-[10px] font-black uppercase flex items-center gap-1">
-                            <MapPin size={10} /> {occ.base}
-                          </span>
-                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
-                            occ.type === 'Ocorrência' ? 'bg-red-100 text-red-600' :
-                            occ.type === 'Orientação' ? 'bg-blue-100 text-blue-600' :
-                            occ.type === 'Monitoramento' ? 'bg-emerald-100 text-emerald-600' :
-                            'bg-slate-100 text-slate-600'
-                          }`}>
-                            {occ.type}
-                          </span>
-                          <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
-                            <Clock size={10} /> {new Date(occ.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                          <span className="text-[10px] font-black text-emerald-600 uppercase ml-auto">
-                            {occ.operator}
-                          </span>
-                          <div className="flex items-center gap-1 ml-2">
-                            <button 
-                              onClick={() => handleEdit(occ)}
-                              className="p-1 text-slate-300 hover:text-blue-500 transition-colors"
-                              title="Editar Ocorrência"
-                            >
-                              <Pencil size={14} />
-                            </button>
-                            <button 
-                              onClick={() => handleDeleteOccurrence(occ.id)}
-                              className="p-1 text-slate-300 hover:text-red-500 transition-colors"
-                              title="Excluir Ocorrência"
-                            >
-                              <X size={14} />
-                            </button>
+                occurrences.map((occ, idx) => {
+                  const retStatus = getRetentionStatus(occ);
+                  const canDelete = canUserDelete(occ);
+
+                  return (
+                    <div key={`${occ.id}-${idx}`} className={`bg-white rounded-2xl border ${retStatus.isExpiringToday ? 'border-amber-300 ring-2 ring-amber-100/70' : 'border-slate-200'} p-4 shadow-sm hover:shadow-md transition-all group`}>
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="space-y-2 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md text-[10px] font-black uppercase flex items-center gap-1">
+                              <MapPin size={10} /> {occ.base}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
+                              occ.type === 'Ocorrência' ? 'bg-red-100 text-red-600' :
+                              occ.type === 'Orientação' ? 'bg-blue-100 text-blue-600' :
+                              occ.type === 'Monitoramento' ? 'bg-emerald-100 text-emerald-600' :
+                              'bg-slate-100 text-slate-600'
+                            }`}>
+                              {occ.type}
+                            </span>
+
+                            {retStatus.isFixed && (
+                              retStatus.isIndefinite ? (
+                                <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-purple-100 text-purple-700 flex items-center gap-1">
+                                  <Pin size={10} /> Fixo Indeterminado
+                                </span>
+                              ) : retStatus.isExpiringToday ? (
+                                <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-amber-100 text-amber-700 flex items-center gap-1">
+                                  <Clock size={10} /> Vencimento hoje ({retStatus.label})
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-emerald-100 text-emerald-700 flex items-center gap-1">
+                                  <Pin size={10} /> Fixo até {retStatus.label}
+                                </span>
+                              )
+                            )}
+
+                            <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
+                              <Clock size={10} /> {formatTimeSafe(occ.createdAt)}
+                            </span>
+                            <span className="text-[10px] font-black text-emerald-600 uppercase ml-auto">
+                              {occ.operator}
+                            </span>
+                            <div className="flex items-center gap-1 ml-2">
+                              <button 
+                                onClick={() => handleEdit(occ)}
+                                className="p-1 text-slate-300 hover:text-blue-500 transition-colors"
+                                title="Editar Ocorrência"
+                              >
+                                <Pencil size={14} />
+                              </button>
+                              {canDelete ? (
+                                <button 
+                                  onClick={() => handleDeleteOccurrence(occ.id)}
+                                  className="p-1 text-slate-300 hover:text-red-500 transition-colors"
+                                  title="Excluir Ocorrência"
+                                >
+                                  <X size={14} />
+                                </button>
+                              ) : (
+                                <span 
+                                  className="p-1 text-slate-300 cursor-not-allowed opacity-60 flex items-center"
+                                  title={`Item com retenção ativa até ${retStatus.label}. Exclusão permitida apenas ao usuário Deny.`}
+                                >
+                                  <Lock size={12} className="text-slate-400" />
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                        <div className="text-sm text-slate-700 font-medium leading-relaxed">
-                          {occ.type === 'Checklist do Setor' ? (() => {
-                            const decoded = decodeChecklist(getActualDescription(occ.description));
-                            if (decoded) {
-                              return (
-                                <div className="flex flex-col gap-1 mt-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
-                                  <div className="flex items-center gap-2">
-                                    <span className={`font-bold ${decoded.cafeteira ? 'text-emerald-500' : 'text-red-500'}`}>{decoded.cafeteira ? '✓' : '✗'}</span>
-                                    <span>Cafeteira limpa</span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <span className={`font-bold ${decoded.limpeza ? 'text-emerald-500' : 'text-red-500'}`}>{decoded.limpeza ? '✓' : '✗'}</span>
-                                    <span>Limpeza e conservação da Sala</span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <span className={`font-bold ${decoded.organizacao ? 'text-emerald-500' : 'text-red-500'}`}>{decoded.organizacao ? '✓' : '✗'}</span>
-                                    <span>Organização das Mesas</span>
-                                  </div>
-                                  {decoded.description && (
-                                    <div className="mt-2 text-xs text-slate-500 italic">
-                                      Obs: {renderFormattedDescription(decoded.description)}
+                          <div className="text-sm text-slate-700 font-medium leading-relaxed">
+                            {occ.type === 'Checklist do Setor' ? (() => {
+                              const decoded = decodeChecklist(getActualDescription(occ.description));
+                              if (decoded) {
+                                return (
+                                  <div className="flex flex-col gap-1 mt-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                                    <div className="flex items-center gap-2">
+                                      <span className={`font-bold ${decoded.cafeteira ? 'text-emerald-500' : 'text-red-500'}`}>{decoded.cafeteira ? '✓' : '✗'}</span>
+                                      <span>Cafeteira limpa</span>
                                     </div>
-                                  )}
+                                    <div className="flex items-center gap-2">
+                                      <span className={`font-bold ${decoded.limpeza ? 'text-emerald-500' : 'text-red-500'}`}>{decoded.limpeza ? '✓' : '✗'}</span>
+                                      <span>Limpeza e conservação da Sala</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className={`font-bold ${decoded.organizacao ? 'text-emerald-500' : 'text-red-500'}`}>{decoded.organizacao ? '✓' : '✗'}</span>
+                                      <span>Organização das Mesas</span>
+                                    </div>
+                                    {decoded.description && (
+                                      <div className="mt-2 text-xs text-slate-500 italic">
+                                        Obs: {renderFormattedDescription(decoded.description)}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              }
+                              return renderFormattedDescription(getActualDescription(occ.description));
+                            })() : renderFormattedDescription(getActualDescription(occ.description))}
+                          </div>
+
+                          {/* Sugestão visual e discreta no dia do término da retenção */}
+                          {retStatus.isExpiringToday && (
+                            <div className="mt-3 p-3 bg-amber-50/90 border border-amber-200/90 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200">
+                              <div className="flex items-center gap-2.5 text-amber-900 text-xs">
+                                <div className="p-1 bg-amber-100 text-amber-700 rounded-lg shrink-0">
+                                  <Clock size={14} />
                                 </div>
-                              );
-                            }
-                            return renderFormattedDescription(getActualDescription(occ.description));
-                          })() : renderFormattedDescription(getActualDescription(occ.description))}
+                                <div>
+                                  <span className="font-bold">Prazo de retenção encerra hoje ({retStatus.label}).</span>
+                                  <p className="text-[11px] text-amber-700 font-medium">Deseja excluir este item das passagens futuras ou mantê-lo?</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                                <button 
+                                  type="button"
+                                  onClick={() => handleDeleteOccurrence(occ.id)}
+                                  className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
+                                  title="Excluir ocorrência"
+                                >
+                                  <Trash2 size={12} />
+                                  <span>Excluir</span>
+                                </button>
+                                <button 
+                                  type="button"
+                                  onClick={() => handleOpenRenewModal(occ)}
+                                  className="px-3 py-1.5 bg-white hover:bg-amber-100/60 border border-amber-300 text-amber-900 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
+                                  title="Prorrogar ou alterar retenção"
+                                >
+                                  <Pin size={12} />
+                                  <span>Manter / Renovar</span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
@@ -1419,9 +1770,9 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                         </div>
                         <div className="flex items-center gap-3">
                           <div className="flex -space-x-2">
-                            {Array.from(new Set(dayOccs.map(o => o.operator))).slice(0, 3).map((op, i) => (
-                              <div key={i} className="w-6 h-6 rounded-full bg-slate-200 border-2 border-white flex items-center justify-center text-[8px] font-black text-slate-500" title={op as string}>
-                                {(op as string).substring(0, 2)}
+                            {Array.from(new Set(dayOccs.map(o => o?.operator || ''))).filter(Boolean).slice(0, 3).map((op, i) => (
+                              <div key={i} className="w-6 h-6 rounded-full bg-slate-200 border-2 border-white flex items-center justify-center text-[8px] font-black text-slate-500" title={op}>
+                                {String(op).substring(0, 2).toUpperCase()}
                               </div>
                             ))}
                           </div>
@@ -1498,14 +1849,25 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                                                   {occ.type}
                                                 </span>
                                                 <div className="flex items-center gap-2">
-                                                  <span className="text-[7px] font-bold text-slate-300">{occ.operator} • {new Date(occ.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
-                                                  <button 
-                                                    onClick={() => handleDeleteOccurrence(occ.id)}
-                                                    className="text-slate-300 hover:text-red-500 transition-colors"
-                                                    title="Excluir Ocorrência"
-                                                  >
-                                                    <X size={10} />
-                                                  </button>
+                                                  {occ.keepUntil && (
+                                                    <span className="text-[8px] font-bold text-amber-600 bg-amber-50 px-1 py-0.5 rounded flex items-center gap-0.5">
+                                                      <Pin size={8} /> {occ.keepUntil === 'indefinite' ? 'Indeterminado' : occ.keepUntil}
+                                                    </span>
+                                                  )}
+                                                  <span className="text-[7px] font-bold text-slate-300">{occ.operator} • {formatTimeSafe(occ.createdAt)}</span>
+                                                  {canUserDelete(occ) ? (
+                                                    <button 
+                                                      onClick={() => handleDeleteOccurrence(occ.id)}
+                                                      className="text-slate-300 hover:text-red-500 transition-colors"
+                                                      title="Excluir Ocorrência"
+                                                    >
+                                                      <X size={10} />
+                                                    </button>
+                                                  ) : (
+                                                    <span title="Item fixo com data futura (apenas Deny pode excluir)">
+                                                      <Lock size={10} className="text-slate-300 opacity-60" />
+                                                    </span>
+                                                  )}
                                                 </div>
                                               </div>
                                               <div className="text-[11px] text-slate-600 font-medium leading-relaxed">
@@ -1621,7 +1983,7 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                           )}
                         </div>
                         <span className="text-xs font-bold text-slate-500">
-                          {new Date(occ.createdAt).toLocaleString('pt-BR')}
+                          {formatDateTimeSafe(occ.createdAt)}
                         </span>
                       </div>
                       
@@ -1825,9 +2187,16 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                                     })() : renderFormattedDescription(getActualDescription(occ.description))}
                                   </div>
                                   <div className="flex items-center justify-between pt-2">
-                                    <span className="text-[10px] font-black text-emerald-600 uppercase">
-                                      Operador: {occ.operator}
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[10px] font-black text-emerald-600 uppercase">
+                                        Operador: {occ.operator}
+                                      </span>
+                                      {occ.keepUntil && (
+                                        <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                          <Pin size={10} /> {occ.keepUntil === 'indefinite' ? 'Indeterminado' : occ.keepUntil}
+                                        </span>
+                                      )}
+                                    </div>
                                     <div className="flex items-center gap-2">
                                       <button 
                                         onClick={() => { handleEdit(occ); setSelectedDateOccs(null); }}
@@ -1835,12 +2204,18 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                                       >
                                         <Pencil size={14} />
                                       </button>
-                                      <button 
-                                        onClick={() => handleDeleteOccurrence(occ.id)}
-                                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                                      >
-                                        <X size={14} />
-                                      </button>
+                                      {canUserDelete(occ) ? (
+                                        <button 
+                                          onClick={() => handleDeleteOccurrence(occ.id)}
+                                          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                        >
+                                          <X size={14} />
+                                        </button>
+                                      ) : (
+                                        <span title="Item fixo com data futura (apenas Deny pode excluir)">
+                                          <Lock size={12} className="text-slate-300 opacity-60" />
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
@@ -1861,6 +2236,118 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                 className="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black rounded-xl transition-all active:scale-95"
               >
                 Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Manter / Renovar Retenção */}
+      {renewOccModal && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white max-w-md w-full rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200">
+            <div className="p-5 bg-gradient-to-r from-amber-500 to-amber-600 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-white/20 rounded-xl">
+                  <Pin size={20} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black leading-tight">Manter / Renovar Informação</h3>
+                  <p className="text-amber-100 text-xs font-medium">Defina a permanência nas passagens futuras</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setRenewOccModal(null)}
+                className="p-1.5 bg-white/20 hover:bg-white/30 rounded-xl transition-all"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                <span className="text-[10px] font-black text-slate-400 uppercase">Informação selecionada</span>
+                <p className="text-xs font-semibold text-slate-700 line-clamp-2">
+                  {getActualDescription(renewOccModal.description)}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase">Opções de permanência</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setRenewKeepType('none'); setRenewKeepDate(''); }}
+                    className={`p-2.5 rounded-xl text-xs font-bold transition-all border text-center ${
+                      renewKeepType === 'none'
+                        ? 'bg-amber-50 border-amber-500 text-amber-900 shadow-sm'
+                        : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                    }`}
+                  >
+                    Apenas hoje
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRenewKeepType('date');
+                      if (!renewKeepDate) {
+                        const d = new Date();
+                        d.setDate(d.getDate() + 3);
+                        setRenewKeepDate(d.toISOString().split('T')[0]);
+                      }
+                    }}
+                    className={`p-2.5 rounded-xl text-xs font-bold transition-all border text-center ${
+                      renewKeepType === 'date'
+                        ? 'bg-amber-50 border-amber-500 text-amber-900 shadow-sm'
+                        : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                    }`}
+                  >
+                    Nova Data
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setRenewKeepType('indefinite'); setRenewKeepDate(''); }}
+                    className={`p-2.5 rounded-xl text-xs font-bold transition-all border text-center ${
+                      renewKeepType === 'indefinite'
+                        ? 'bg-amber-50 border-amber-500 text-amber-900 shadow-sm'
+                        : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                    }`}
+                  >
+                    Indeterminado
+                  </button>
+                </div>
+
+                {renewKeepType === 'date' && (
+                  <div className="pt-2 flex items-center gap-2">
+                    <label className="text-xs font-bold text-slate-600 shrink-0">Prorrogar até:</label>
+                    <input 
+                      type="date"
+                      min={getTodayDateStr()}
+                      value={renewKeepDate}
+                      onChange={(e) => setRenewKeepDate(e.target.value)}
+                      className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-amber-500/20 outline-none"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2.5">
+              <button 
+                type="button"
+                onClick={() => setRenewOccModal(null)}
+                className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-200 rounded-xl text-xs transition-all"
+              >
+                Cancelar
+              </button>
+              <button 
+                type="button"
+                onClick={handleSaveRenew}
+                disabled={isSaving || (renewKeepType === 'date' && !renewKeepDate)}
+                className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white font-black rounded-xl text-xs shadow-md shadow-amber-500/20 transition-all disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isSaving ? <MoreHorizontal size={14} className="animate-pulse" /> : <Pin size={14} />}
+                Confirmar
               </button>
             </div>
           </div>
