@@ -515,6 +515,41 @@ function gerarPdfHtmlFormatado(d, memoryFiles, imageFolder) {
               '</div>';
   }
 
+  var vStatusObs = d.verificationStatusObs || '';
+  var vStatusDisplay = vStatus;
+  if (String(vStatus).indexOf(' - ') > -1) {
+    vStatusObs = String(vStatus).substring(String(vStatus).indexOf(' - ') + 3);
+    vStatusDisplay = String(vStatus).split(' - ')[0];
+  }
+
+  var statusBoxHtml = '';
+  if (vStatusDisplay === 'Observações Inseridas' || vStatusObs) {
+    statusBoxHtml = '<div style="margin-top: 20px; page-break-inside: avoid; border: 1.5px solid #ef4444; border-radius: 10px; padding: 14px; background-color: #fef2f2;">' +
+      '<table width="100%" border="0" cellspacing="0" cellpadding="0">' +
+        '<tr>' +
+          '<td align="left"><strong style="font-family: Arial, sans-serif; font-size: 11px; color: #991b1b; text-transform: uppercase; letter-spacing: 0.5px;">6. Parecer Final e Status da Verificação</strong></td>' +
+          '<td align="right" style="text-align: right;"><span style="background-color: #dc2626; color: #ffffff; padding: 4px 8px; border-radius: 4px; font-family: Arial, sans-serif; font-size: 9px; font-weight: bold; text-transform: uppercase;">OBSERVAÇÕES INSERIDAS</span></td>' +
+        '</tr>' +
+      '</table>' +
+      '<div style="background-color: #ffffff; border: 1px solid #fca5a5; border-radius: 8px; padding: 12px; margin-top: 10px;">' +
+        '<span style="font-size: 9px; font-weight: bold; color: #b91c1c; text-transform: uppercase; letter-spacing: 0.3px; display: block; margin-bottom: 6px;">⚠️ REPORTE DE OBSERVAÇÃO DETALHADA DO OPERADOR:</span>' +
+        '<div style="font-size: 10.5px; color: #1e293b; line-height: 1.5; white-space: pre-wrap; font-family: Arial, sans-serif;">' + (vStatusObs || 'Desvio identificado na verificação da jornada.') + '</div>' +
+      '</div>' +
+    '</div>';
+  } else {
+    statusBoxHtml = '<div style="margin-top: 20px; page-break-inside: avoid; border: 1.5px solid #10b981; border-radius: 10px; padding: 14px; background-color: #f0fdf4;">' +
+      '<table width="100%" border="0" cellspacing="0" cellpadding="0">' +
+        '<tr>' +
+          '<td align="left"><strong style="font-family: Arial, sans-serif; font-size: 11px; color: #065f46; text-transform: uppercase; letter-spacing: 0.5px;">6. Parecer Final e Status da Verificação</strong></td>' +
+          '<td align="right" style="text-align: right;"><span style="background-color: #059669; color: #ffffff; padding: 4px 8px; border-radius: 4px; font-family: Arial, sans-serif; font-size: 9px; font-weight: bold; text-transform: uppercase;">OK - SEM DESVIOS</span></td>' +
+        '</tr>' +
+      '</table>' +
+      '<p style="font-size: 10px; color: #047857; margin: 8px 0 0 0; line-height: 1.4; font-style: italic;">' +
+        'Viagem analisada e validada sem não conformidades ou desvios adicionais reportados.' +
+      '</p>' +
+    '</div>';
+  }
+
   var formatarDataBR = function(dateStr) {
     if (!dateStr) return '';
     var parts = dateStr.split('-');
@@ -771,6 +806,7 @@ function gerarPdfHtmlFormatado(d, memoryFiles, imageFolder) {
       
       imagesHtml +
       mapHtml +
+      statusBoxHtml +
       
       '<div style="page-break-inside: avoid; text-align: center; margin-top: 25px; border-top: 1px solid #cbd5e1; padding-top: 12px;">' +
         '<p style="margin: 0; font-family: Arial, sans-serif; font-size: 8px; color: #475569; font-weight: bold; letter-spacing: 0.3px;">' +
@@ -793,10 +829,30 @@ function gerarPdfHtmlFormatado(d, memoryFiles, imageFolder) {
 }
 
 function getHtmlEmailBolaPreta(d, vStatus) {
-  const isOk = vStatus === 'OK';
-  const headerColor = isOk ? '#047857' : '#b91c1c';
-  const statusColor = isOk ? '#059669' : '#ea580c';
-  const statusBg = isOk ? '#ecfdf5' : '#fff7ed';
+  var isOk = vStatus === 'OK';
+  var headerColor = isOk ? '#047857' : '#b91c1c';
+  var statusColor = isOk ? '#059669' : '#ea580c';
+  var statusBg = isOk ? '#ecfdf5' : '#fff7ed';
+
+  var vStatusObs = d.verificationStatusObs || '';
+  if (String(vStatus).indexOf(' - ') > -1) {
+    vStatusObs = String(vStatus).substring(String(vStatus).indexOf(' - ') + 3);
+    vStatus = String(vStatus).split(' - ')[0];
+  }
+
+  var emailObsHtml = '';
+  if (!isOk && vStatusObs) {
+    emailObsHtml = `
+      <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #fef2f2; border-radius: 8px; border: 1.5px solid #fca5a5; margin-bottom: 25px;">
+        <tr>
+          <td style="padding: 16px;">
+            <p style="margin: 0 0 6px 0; font-size: 11px; color: #b91c1c; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">⚠️ Observações Inseridas pelo Operador:</p>
+            <p style="margin: 0; font-size: 13px; color: #1e293b; line-height: 1.5; white-space: pre-wrap; font-weight: 500;">${vStatusObs}</p>
+          </td>
+        </tr>
+      </table>
+    `;
+  }
 
   return `
     <!DOCTYPE html>
@@ -821,11 +877,11 @@ function getHtmlEmailBolaPreta(d, vStatus) {
               <tr>
                 <td style="padding: 40px 30px;">
                   
-                  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: ${statusBg}; border-radius: 8px; border: 1px solid #cbd5e1; margin-bottom: 30px;">
+                  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: ${statusBg}; border-radius: 8px; border: 1px solid #cbd5e1; margin-bottom: 25px;">
                     <tr>
                       <td style="padding: 24px; text-align: center;">
                         <p style="margin: 0 0 10px 0; font-size: 11px; color: ${statusColor}; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;">Parecer Operacional</p>
-                        <p style="margin: 0; font-size: 28px; color: ${statusColor}; font-weight: bold;">${vStatus.toUpperCase()}</p>
+                        <p style="margin: 0; font-size: 26px; color: ${statusColor}; font-weight: bold;">${vStatus.toUpperCase()}</p>
                       </td>
                     </tr>
                     <tr>
@@ -845,6 +901,8 @@ function getHtmlEmailBolaPreta(d, vStatus) {
                       </td>
                     </tr>
                   </table>
+
+                  ${emailObsHtml}
 
                   <h2 style="font-size: 16px; color: #0f172a; margin: 0 0 15px 0; text-transform: uppercase; border-bottom: 2px solid ${headerColor}; padding-bottom: 8px; display: inline-block;">Sumário Técnico</h2>
 
@@ -1386,19 +1444,50 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
       '<table width="100%" border="0" cellspacing="0" cellpadding="0"><tr>' +
         '<td width="20%" valign="middle" align="left"><img src="https://risel.com.br/wp-content/uploads/2024/07/RISEL.png" style="max-height: 48px; width: auto; display: block;" /></td>' +
         '<td width="50%" valign="middle" align="left" style="padding-left: 8px;"><h1 style="margin: 0; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 16px; font-weight: 900; color: #006633; letter-spacing: -0.3px; text-transform: uppercase;">RISEL COMBUSTÍVEIS</h1><p style="margin: 2px 0 0 0; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 10px; font-weight: bold; color: #F99D1C; text-transform: uppercase;">SISTEMA DE MONITORAMENTO E AVALIAÇÃO DE DIREÇÃO</p></td>' +
-        '<td width="30%" align="right" valign="middle" style="font-family: monospace; font-size: 8px; color: #64748b; text-align: right;"><div><strong>EMISSÃO:</strong> ' + dataEmissao + '</div><div><strong>SISTEMA:</strong> MONITORAMENTO RISEL</div></td>' +
+        '<td width="30%" align="right" valign="middle" style="font-family: monospace; font-size: 8.5px; color: #64748b; text-align: right;"><div><strong>EMISSÃO:</strong> ' + dataEmissao + '</div><div><strong>SISTEMA:</strong> MONITORAMENTO RISEL</div></td>' +
       '</tr></table>' +
     '</div>' +
 
     // Informações Iniciais Antes das Perguntas
     '<div style="margin-bottom: 14px;">' +
-      '<div style="background-color: #f8fafc; border: 1.5px solid #006633; border-radius: 6px; padding: 6px 10px; margin-bottom: 6px;"><span style="font-size: 8.5px; color: #006633; font-weight: bold; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">👤 MOTORISTA</span><div style="font-size: 12px; font-weight: 800; color: #0f172a; margin-top: 2px; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">' + motorista + '</div></div>' +
-      '<div style="background-color: #f8fafc; border: 1.5px solid #006633; border-radius: 6px; padding: 6px 10px; margin-bottom: 10px;"><span style="font-size: 8.5px; color: #006633; font-weight: bold; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">📋 AVALIADOR</span><div style="font-size: 12px; font-weight: 800; color: #0f172a; margin-top: 2px; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">' + avaliador + '</div></div>' +
-      '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom: 6px;"><tr><td bgcolor="#006633" align="center" style="background-color: #006633; color: #ffffff; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11px; font-weight: 800; text-transform: uppercase; padding: 7px 12px; border-radius: 6px; text-align: center; letter-spacing: 0.5px;"><font color="#ffffff"><b style="color: #ffffff;">INFORMAÇÕES DA DESCARGA</b></font></td></tr></table>' +
-      '<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; margin-bottom: 5px;"><span style="font-size: 8.5px; color: #475569; font-weight: bold; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">🏢 TRANSPORTADORA</span><div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-top: 1px; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">' + transportadora + '</div></div>' +
-      '<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; margin-bottom: 5px;"><span style="font-size: 8.5px; color: #475569; font-weight: bold; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">🚛 FROTA</span><div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-top: 1px; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">' + frota + '</div></div>' +
-      '<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; margin-bottom: 5px;"><span style="font-size: 8.5px; color: #475569; font-weight: bold; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">📅 DATA DA AVALIAÇÃO</span><div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-top: 1px; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">' + dataAval + '</div></div>' +
-      '<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; margin-bottom: 6px;"><span style="font-size: 8.5px; color: #475569; font-weight: bold; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">🗺️ LOCAL / TRECHO</span><div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-top: 1px; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">' + localTrecho + '</div></div>' +
+      '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 10px;">' +
+        '<tr>' +
+          '<td width="50%" style="padding: 10px 14px; text-align: left; vertical-align: middle;">' +
+            '<span style="font-size: 8.5px; color: #64748b; font-weight: 800; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif; display: block; margin-bottom: 2px;">👤 MOTORISTA</span>' +
+            '<span style="font-size: 13.5px; font-weight: 900; color: #0f172a; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">' + motorista + '</span>' +
+          '</td>' +
+          '<td width="50%" style="padding: 10px 14px; text-align: right; vertical-align: middle;">' +
+            '<span style="font-size: 8.5px; color: #64748b; font-weight: 800; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif; display: block; margin-bottom: 2px;">📋 AVALIADOR</span>' +
+            '<span style="font-size: 12px; font-weight: 800; color: #1e293b; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif;">' + avaliador + '</span>' +
+          '</td>' +
+        '</tr>' +
+      '</table>' +
+      
+      '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom: 8px;"><tr><td bgcolor="#006633" align="center" style="background-color: #006633; color: #ffffff; font-family: \'Aptos Narrow\', \'Arial Narrow\', sans-serif; font-size: 11px; font-weight: 800; text-transform: uppercase; padding: 7px 12px; border-radius: 6px; text-align: center; letter-spacing: 0.5px;"><font color="#ffffff"><b style="color: #ffffff;">INFORMAÇÕES DA DESCARGA</b></font></td></tr></table>' +
+      
+      '<table width="100%" border="0" cellspacing="0" cellpadding="0" style="table-layout: fixed; width: 100%; border-spacing: 0; border-collapse: separate; margin-bottom: 12px;">' +
+        '<tr>' +
+          '<td width="23.5%" style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; vertical-align: top;">' +
+            '<span style="font-size: 8px; color: #64748b; font-weight: 800; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif; display: block; margin-bottom: 2px;">🏢 TRANSPORTADORA</span>' +
+            '<span style="font-size: 10.5px; font-weight: 700; color: #0f172a; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif; display: block; word-break: break-word;">' + transportadora + '</span>' +
+          '</td>' +
+          '<td width="2%"></td>' +
+          '<td width="23.5%" style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; vertical-align: top;">' +
+            '<span style="font-size: 8px; color: #64748b; font-weight: 800; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif; display: block; margin-bottom: 2px;">🚛 FROTA</span>' +
+            '<span style="font-size: 10.5px; font-weight: 700; color: #0f172a; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif; display: block;">' + frota + '</span>' +
+          '</td>' +
+          '<td width="2%"></td>' +
+          '<td width="23.5%" style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; vertical-align: top;">' +
+            '<span style="font-size: 8px; color: #64748b; font-weight: 800; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif; display: block; margin-bottom: 2px;">📅 DATA DA AVALIAÇÃO</span>' +
+            '<span style="font-size: 10.5px; font-weight: 700; color: #0f172a; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif; display: block;">' + dataAval + '</span>' +
+          '</td>' +
+          '<td width="2%"></td>' +
+          '<td width="23.5%" style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; vertical-align: top;">' +
+            '<span style="font-size: 8px; color: #64748b; font-weight: 800; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif; display: block; margin-bottom: 2px;">📍 LOCAL / TRECHO</span>' +
+            '<span style="font-size: 10.5px; font-weight: 700; color: #0f172a; text-transform: uppercase; font-family: \'Aptos Narrow\', sans-serif; display: block; word-break: break-word;">' + localTrecho + '</span>' +
+          '</td>' +
+        '</tr>' +
+      '</table>' +
     '</div>' +
 
     // Tabela de Perguntas 1 a 30
@@ -1416,6 +1505,12 @@ function gerarPdfHtmlAvaliacao(data, memoryFiles, imageFolder) {
     pontosResultadoHtml +
     conversaFeedbackHtml +
     declaracaoMotoristaHtml +
+
+    '<div style="page-break-inside: avoid; text-align: center; margin-top: 25px; border-top: 1px solid #cbd5e1; padding-top: 12px;">' +
+      '<p style="margin: 0; font-family: \'Aptos Narrow\', sans-serif; font-size: 8.5px; color: #64748b; font-weight: bold; letter-spacing: 0.3px;">' +
+        'Risel Combustíveis - Sistema de Monitoramento e Avaliação de Direção' +
+      '</p>' +
+    '</div>' +
 
     '</body></html>';
 
@@ -1569,41 +1664,43 @@ function getHtmlEmailBody(d) {
 
         <div style="padding: 22px;">
           <!-- Informações em Cards Informativos -->
-          <table style="width: 100%; border-collapse: separate; border-spacing: 0 8px; margin-bottom: 15px;">
+          <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 12px;">
             <tr>
-              <td style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #006633; border-radius: 6px; padding: 8px 12px;">
-                <div style="font-size: 9px; color: #006633; text-transform: uppercase; font-weight: 800; font-family: 'Aptos Narrow', sans-serif;">👤 MOTORISTA</div>
-                <div style="font-size: 13px; color: #0f172a; font-weight: 800; text-transform: uppercase; margin-top: 1px;">${motorista}</div>
+              <td width="50%" style="padding: 10px 14px; text-align: left; vertical-align: middle;">
+                <span style="font-size: 8.5px; color: #64748b; font-weight: 800; text-transform: uppercase; font-family: 'Aptos Narrow', sans-serif; display: block; margin-bottom: 2px;">👤 MOTORISTA</span>
+                <span style="font-size: 13.5px; font-weight: 900; color: #0f172a; text-transform: uppercase; font-family: 'Aptos Narrow', sans-serif;">${motorista}</span>
+              </td>
+              <td width="50%" style="padding: 10px 14px; text-align: right; vertical-align: middle;">
+                <span style="font-size: 8.5px; color: #64748b; font-weight: 800; text-transform: uppercase; font-family: 'Aptos Narrow', sans-serif; display: block; margin-bottom: 2px;">📋 AVALIADOR</span>
+                <span style="font-size: 12px; font-weight: 800; color: #1e293b; text-transform: uppercase; font-family: 'Aptos Narrow', sans-serif;">${avaliador}</span>
               </td>
             </tr>
+          </table>
+
+          <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom: 8px;"><tr><td bgcolor="#006633" align="center" style="background-color: #006633; color: #ffffff; font-family: 'Aptos Narrow', 'Arial Narrow', sans-serif; font-size: 10.5px; font-weight: 800; text-transform: uppercase; padding: 6px 10px; border-radius: 6px; text-align: center; letter-spacing: 0.5px;"><font color="#ffffff"><b style="color: #ffffff;">INFORMAÇÕES DA DESCARGA</b></font></td></tr></table>
+
+          <table width="100%" border="0" cellspacing="0" cellpadding="0" style="table-layout: fixed; width: 100%; border-spacing: 0; border-collapse: separate; margin-bottom: 12px;">
             <tr>
-              <td style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #006633; border-radius: 6px; padding: 8px 12px;">
-                <div style="font-size: 9px; color: #006633; text-transform: uppercase; font-weight: 800; font-family: 'Aptos Narrow', sans-serif;">📋 AVALIADOR</div>
-                <div style="font-size: 13px; color: #0f172a; font-weight: 800; text-transform: uppercase; margin-top: 1px;">${avaliador}</div>
+              <td width="48%" style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; vertical-align: top;">
+                <span style="font-size: 8px; color: #64748b; font-weight: 800; text-transform: uppercase; font-family: 'Aptos Narrow', sans-serif; display: block; margin-bottom: 2px;">🏢 TRANSPORTADORA</span>
+                <span style="font-size: 11px; font-weight: 700; color: #0f172a; text-transform: uppercase; font-family: 'Aptos Narrow', sans-serif; display: block; word-break: break-word;">${transportadora}</span>
+              </td>
+              <td width="4%"></td>
+              <td width="48%" style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; vertical-align: top;">
+                <span style="font-size: 8px; color: #64748b; font-weight: 800; text-transform: uppercase; font-family: 'Aptos Narrow', sans-serif; display: block; margin-bottom: 2px;">🚛 FROTA</span>
+                <span style="font-size: 11px; font-weight: 700; color: #0f172a; text-transform: uppercase; font-family: 'Aptos Narrow', sans-serif; display: block;">${frota}</span>
               </td>
             </tr>
+            <tr><td height="6"></td><td></td><td></td></tr>
             <tr>
-              <td style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #006633; border-radius: 6px; padding: 8px 12px;">
-                <div style="font-size: 9px; color: #006633; text-transform: uppercase; font-weight: 800; font-family: 'Aptos Narrow', sans-serif;">🏢 TRANSPORTADORA</div>
-                <div style="font-size: 12px; color: #0f172a; font-weight: 700; text-transform: uppercase; margin-top: 1px;">${transportadora}</div>
+              <td width="48%" style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; vertical-align: top;">
+                <span style="font-size: 8px; color: #64748b; font-weight: 800; text-transform: uppercase; font-family: 'Aptos Narrow', sans-serif; display: block; margin-bottom: 2px;">📅 DATA DA AVALIAÇÃO</span>
+                <span style="font-size: 11px; font-weight: 700; color: #0f172a; text-transform: uppercase; font-family: 'Aptos Narrow', sans-serif; display: block;">${dataAval}</span>
               </td>
-            </tr>
-            <tr>
-              <td style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #006633; border-radius: 6px; padding: 8px 12px;">
-                <div style="font-size: 9px; color: #006633; text-transform: uppercase; font-weight: 800; font-family: 'Aptos Narrow', sans-serif;">🚛 FROTA</div>
-                <div style="font-size: 12px; color: #0f172a; font-weight: 700; text-transform: uppercase; margin-top: 1px;">${frota}</div>
-              </td>
-            </tr>
-            <tr>
-              <td style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #006633; border-radius: 6px; padding: 8px 12px;">
-                <div style="font-size: 9px; color: #006633; text-transform: uppercase; font-weight: 800; font-family: 'Aptos Narrow', sans-serif;">📅 DATA DA AVALIAÇÃO</div>
-                <div style="font-size: 12px; color: #0f172a; font-weight: 700; text-transform: uppercase; margin-top: 1px;">${dataAval}</div>
-              </td>
-            </tr>
-            <tr>
-              <td style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #006633; border-radius: 6px; padding: 8px 12px;">
-                <div style="font-size: 9px; color: #006633; text-transform: uppercase; font-weight: 800; font-family: 'Aptos Narrow', sans-serif;">🗺️ LOCAL / TRECHO</div>
-                <div style="font-size: 12px; color: #0f172a; font-weight: 700; text-transform: uppercase; margin-top: 1px;">${local}</div>
+              <td width="4%"></td>
+              <td width="48%" style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; vertical-align: top;">
+                <span style="font-size: 8px; color: #64748b; font-weight: 800; text-transform: uppercase; font-family: 'Aptos Narrow', sans-serif; display: block; margin-bottom: 2px;">📍 LOCAL / TRECHO</span>
+                <span style="font-size: 11px; font-weight: 700; color: #0f172a; text-transform: uppercase; font-family: 'Aptos Narrow', sans-serif; display: block; word-break: break-word;">${local}</span>
               </td>
             </tr>
           </table>

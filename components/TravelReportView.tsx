@@ -542,6 +542,65 @@ export const TravelReportView: React.FC<TravelReportViewProps> = ({ record, onCl
                         {/* MAPA DE MOVIMENTAÇÃO (Widescreen Horizontal Layout) */}
                         {renderReportMap()}
                     </div>
+
+                    {/* SECTION 6: STATUS FINAL DA VERIFICAÇÃO E OBSERVAÇÕES */}
+                    {(() => {
+                        let vStatus = record.verificationStatus || 'OK';
+                        let vObs = record.verificationStatusObs || '';
+                        if (vStatus.includes(' - ')) {
+                            const parts = vStatus.split(' - ');
+                            vStatus = parts[0];
+                            if (!vObs) vObs = parts.slice(1).join(' - ');
+                        }
+                        const isObs = vStatus === 'Observações Inseridas' || Boolean(vObs);
+
+                        return (
+                            <div className="relative z-10 space-y-4 break-inside-avoid print:break-inside-avoid">
+                                <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-2 border-b border-slate-200 pb-2">
+                                    <ShieldAlert size={16} className={isObs ? "text-red-500" : "text-emerald-500"} />
+                                    6. Parecer Final e Observações da Análise
+                                </h3>
+
+                                <div className={`p-5 rounded-2xl border flex flex-col gap-4 ${
+                                    isObs 
+                                        ? 'bg-red-50/50 border-red-200 text-red-950 shadow-sm' 
+                                        : 'bg-emerald-50/50 border-emerald-200 text-emerald-950'
+                                }`}>
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                        <div className="flex items-center gap-2.5">
+                                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Status da Verificação:</span>
+                                            <span className={`px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wide border shadow-sm ${
+                                                isObs
+                                                    ? 'bg-red-600 border-red-700 text-white'
+                                                    : 'bg-emerald-600 border-emerald-700 text-white'
+                                            }`}>
+                                                {isObs ? 'OBSERVAÇÕES INSERIDAS' : 'OK - SEM DESVIOS'}
+                                            </span>
+                                        </div>
+                                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                                            Operador Responsável: <strong className="text-slate-800">{record.operator || 'SISTEMA'}</strong>
+                                        </span>
+                                    </div>
+
+                                    {isObs ? (
+                                        <div className="bg-white rounded-xl p-4 border border-red-200 space-y-2">
+                                            <span className="text-[10px] font-black uppercase tracking-widest text-red-600 block flex items-center gap-1.5">
+                                                <AlertTriangle size={13} />
+                                                Reporte de Observação Detalhada do Operador:
+                                            </span>
+                                            <p className="text-xs font-medium text-slate-800 whitespace-pre-wrap leading-relaxed">
+                                                {vObs || 'Nenhum detalhe adicional informado.'}
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <p className="text-xs font-medium text-emerald-800 italic">
+                                            Viagem analisada e validada sem não conformidades ou desvios adicionais reportados.
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })()}
                 </div>
 
                 {/* Print Styles Sheet (Tailwind injection fallback) */}

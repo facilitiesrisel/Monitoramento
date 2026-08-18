@@ -912,12 +912,14 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
         sortedOccs.forEach(occ => {
           const rawDesc = getActualDescription(occ.description);
           const lines = splitDescriptionLines(rawDesc);
+          const retStatus = getRetentionStatus(occ);
+          const keepTag = occ.keepUntil ? ` [📌 ${retStatus.label}]` : '';
 
           if (lines.length <= 1) {
             const singleText = lines[0] || 'Sem Alterações';
-            template += `- [${occ.type}] ${singleText}\n`;
+            template += `- [${occ.type}]${keepTag} ${singleText}\n`;
           } else {
-            template += `- [${occ.type}]\n`;
+            template += `- [${occ.type}]${keepTag}\n`;
             lines.forEach(line => {
               template += `  • ${line}\n`;
             });
@@ -1066,11 +1068,19 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
             `;
           }
 
+          const retStatus = getRetentionStatus(occ);
+          const keepBadgeHtml = occ.keepUntil ? `
+            <span style="color: #6b21a8; font-weight: bold; font-size: 9px; text-transform: uppercase; background-color: #f3e8ff; border: 1px solid #e9d5ff; padding: 2px 6px; border-radius: 4px; margin-left: 6px;">
+              📌 ${retStatus.label}
+            </span>
+          ` : '';
+
           html += `
             <tr ${idx > 0 ? 'style="border-top: 1px solid #f1f5f9;"' : ''}>
               <td style="font-family: Arial, sans-serif; padding: ${idx > 0 ? '8px 0' : '0 0 8px 0'}; font-size: 13px; line-height: 1.5; color: #334155;">
-                <div style="margin-bottom: 4px;">
+                <div style="margin-bottom: 4px; display: flex; align-items: center;">
                   <span style="color: ${typeColor}; font-weight: bold; font-size: 10px; text-transform: uppercase; background-color: ${typeColor}15; padding: 2px 6px; border-radius: 4px;">${occ.type}</span>
+                  ${keepBadgeHtml}
                 </div>
                 ${descHtml}
               </td>
