@@ -135,6 +135,99 @@ export const getMinDateTimeLocalStr = () => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
+export const parseDateTimeUniversal = (input?: string): Date | null => {
+  if (!input) return null;
+  const str = String(input).trim();
+  if (!str || str.toLowerCase() === 'indefinite' || str.toLowerCase() === 'indeterminado') return null;
+
+  // Corrigir eventual formato corrompido invertido: "20 16:00/08/2026"
+  const garbledMatch = str.match(/^(\d{1,2})\s+(\d{1,2}:\d{2})\/(\d{1,2})\/(\d{4})$/);
+  if (garbledMatch) {
+    const [, day, time, month, year] = garbledMatch;
+    const [hour, min] = time.split(':');
+    return new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10), parseInt(hour, 10), parseInt(min, 10));
+  }
+
+  // Formato ISO padrão com 'T': YYYY-MM-DDTHH:mm ou YYYY-MM-DDTHH:mm:ss
+  if (str.includes('T')) {
+    const [datePart, timePart] = str.split('T');
+    const [y, m, d] = datePart.split('-');
+    const timeClean = (timePart || '00:00').split('.')[0];
+    const [hour, min, sec] = timeClean.split(':');
+    if (y && m && d) {
+      return new Date(
+        parseInt(y, 10),
+        parseInt(m, 10) - 1,
+        parseInt(d, 10),
+        parseInt(hour || '0', 10),
+        parseInt(min || '0', 10),
+        parseInt(sec || '0', 10)
+      );
+    }
+  }
+
+  // Formato YYYY-MM-DD HH:mm ou YYYY-MM-DD HH:mm:ss
+  const ymdMatch = str.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (ymdMatch) {
+    const [, y, m, d, hour, min, sec] = ymdMatch;
+    return new Date(
+      parseInt(y, 10),
+      parseInt(m, 10) - 1,
+      parseInt(d, 10),
+      parseInt(hour || '0', 10),
+      parseInt(min || '0', 10),
+      parseInt(sec || '0', 10)
+    );
+  }
+
+  // Formato Brasileiro: DD/MM/YYYY HH:mm ou DD/MM/YYYY - HH:mm ou DD/MM/YYYY
+  const dmyMatch = str.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})(?:\s*[-–—@àas]?\s*(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (dmyMatch) {
+    let [, d, m, y, hour, min, sec] = dmyMatch;
+    if (y.length === 2) y = '20' + y;
+    return new Date(
+      parseInt(y, 10),
+      parseInt(m, 10) - 1,
+      parseInt(d, 10),
+      parseInt(hour || '0', 10),
+      parseInt(min || '0', 10),
+      parseInt(sec || '0', 10)
+    );
+  }
+
+  // Fallback nativo
+  const d = new Date(str);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+export const formatBrazilianDateTime = (input?: string, includeTimeIfPresent = true): string => {
+  if (!input) return '';
+  const clean = String(input).trim();
+  if (!clean) return '';
+  if (clean.toLowerCase() === 'indefinite' || clean.toLowerCase() === 'indeterminado') {
+    return 'Indeterminado';
+  }
+
+  const dt = parseDateTimeUniversal(clean);
+  if (!dt || isNaN(dt.getTime())) {
+    return clean;
+  }
+
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const d = pad(dt.getDate());
+  const m = pad(dt.getMonth() + 1);
+  const y = dt.getFullYear();
+  const hour = pad(dt.getHours());
+  const min = pad(dt.getMinutes());
+
+  const hasTime = clean.includes(':') || clean.includes('T') || (dt.getHours() !== 0 || dt.getMinutes() !== 0);
+
+  if (includeTimeIfPresent && hasTime) {
+    return `${d}/${m}/${y} - ${hour}:${min}`;
+  }
+  return `${d}/${m}/${y}`;
+};
+
 export const formatRetentionLabel = (keep?: string) => {
   if (!keep) return '';
   const clean = String(keep).trim();
@@ -142,22 +235,7 @@ export const formatRetentionLabel = (keep?: string) => {
   if (clean.toLowerCase() === 'indefinite' || clean.toLowerCase() === 'indeterminado') {
     return 'Indeterminado';
   }
-  try {
-    if (clean.includes('T')) {
-      const [datePart, timePart] = clean.split('T');
-      const [y, m, d] = datePart.split('-');
-      const [hour, min] = timePart.split(':');
-      if (d && m && y && hour && min) {
-        return `${d}/${m}/${y} às ${hour}:${min}`;
-      }
-    } else if (clean.includes('-')) {
-      const [y, m, d] = clean.split('-');
-      if (d && m && y) {
-        return `${d}/${m}/${y}`;
-      }
-    }
-  } catch {}
-  return clean;
+  return formatBrazilianDateTime(clean, true);
 };
 
 const getActualDescription = (desc?: string) => {
@@ -172,28 +250,22 @@ const getAuditLog = (desc?: string) => {
 
 export const formatTimeSafe = (timeStr?: string) => {
   if (!timeStr) return '--:--';
-  try {
-    const d = new Date(timeStr);
-    if (!isNaN(d.getTime())) {
-      return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    }
-    const match = String(timeStr).match(/(\d{1,2}):(\d{2})/);
-    if (match) {
-      return `${match[1].padStart(2, '0')}:${match[2]}`;
-    }
-  } catch {}
+  const dt = parseDateTimeUniversal(timeStr);
+  if (dt && !isNaN(dt.getTime())) {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+  }
+  const match = String(timeStr).match(/(\d{1,2}):(\d{2})/);
+  if (match) {
+    return `${match[1].padStart(2, '0')}:${match[2]}`;
+  }
   return '--:--';
 };
 
 export const formatDateTimeSafe = (timeStr?: string) => {
   if (!timeStr) return '--';
-  try {
-    const d = new Date(timeStr);
-    if (!isNaN(d.getTime())) {
-      return d.toLocaleString('pt-BR');
-    }
-  } catch {}
-  return String(timeStr || '--');
+  const formatted = formatBrazilianDateTime(timeStr, true);
+  return formatted || String(timeStr || '--');
 };
 
 export const splitDescriptionLines = (desc?: string): string[] => {
@@ -413,14 +485,11 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
     let targetTime = 0;
     let targetDateStr = '';
 
-    if (keep.includes('T')) {
-      const parsed = new Date(keep);
-      targetTime = isNaN(parsed.getTime()) ? 0 : parsed.getTime();
-      targetDateStr = keep.split('T')[0];
-    } else if (keep.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      const parsed = new Date(keep + 'T23:59:59');
-      targetTime = isNaN(parsed.getTime()) ? 0 : parsed.getTime();
-      targetDateStr = keep;
+    const parsed = parseDateTimeUniversal(keep);
+    if (parsed && !isNaN(parsed.getTime())) {
+      targetTime = parsed.getTime();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      targetDateStr = `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}`;
     }
 
     const isExpired = targetTime > 0 ? now.getTime() > targetTime : false;
@@ -2354,7 +2423,7 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
                                       {occ.type}
                                     </span>
                                     <span className="text-[10px] font-bold text-slate-400">
-                                      {new Date(occ.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                      {formatTimeSafe(occ.createdAt)}
                                     </span>
                                   </div>
                                   <div className="text-sm text-slate-600 font-medium leading-relaxed">

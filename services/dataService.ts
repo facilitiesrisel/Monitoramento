@@ -219,7 +219,9 @@ export const saveGoogleScriptUrl = (url: string) => {
 // Normaliza data para o formato YYYY-MM-DD
 export const normalizeDate = (dateStr: string): string => {
     if (!dateStr) return "";
-    const dateOnly = dateStr.trim().split(' ')[0];
+    const trimmed = String(dateStr).trim();
+    // Garante que não inclui tempo nem T
+    const dateOnly = trimmed.split('T')[0].split(' ')[0];
     const cleanDate = dateOnly.replace(/\./g, '-').replace(/\//g, '-');
     const parts = cleanDate.split('-');
     
@@ -524,7 +526,8 @@ export const loadData = async (cacheBust = true): Promise<void> => {
               description: r[5],
               operator: r[6],
               finalized: String(r[7]).trim().toUpperCase() === 'TRUE',
-              createdAt: r[8]
+              createdAt: r[8],
+              keepUntil: r[9] || ''
           }));
       }
   }
