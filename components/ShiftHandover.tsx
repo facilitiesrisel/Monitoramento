@@ -135,7 +135,7 @@ export const getMinDateTimeLocalStr = () => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
-export const parseDateTimeUniversal = (input?: string): Date | null => {
+export const parseDateTimeUniversal = (input?: string, defaultEndOfDay = false): Date | null => {
   if (!input) return null;
   const str = String(input).trim();
   if (!str || str.toLowerCase() === 'indefinite' || str.toLowerCase() === 'indeterminado') return null;
@@ -152,16 +152,16 @@ export const parseDateTimeUniversal = (input?: string): Date | null => {
   if (str.includes('T')) {
     const [datePart, timePart] = str.split('T');
     const [y, m, d] = datePart.split('-');
-    const timeClean = (timePart || '00:00').split('.')[0];
+    const timeClean = (timePart || (defaultEndOfDay ? '23:59:59' : '00:00:00')).split('.')[0];
     const [hour, min, sec] = timeClean.split(':');
     if (y && m && d) {
       return new Date(
         parseInt(y, 10),
         parseInt(m, 10) - 1,
         parseInt(d, 10),
-        parseInt(hour || '0', 10),
-        parseInt(min || '0', 10),
-        parseInt(sec || '0', 10)
+        parseInt(hour !== undefined ? hour : (defaultEndOfDay ? '23' : '0'), 10),
+        parseInt(min !== undefined ? min : (defaultEndOfDay ? '59' : '0'), 10),
+        parseInt(sec !== undefined ? sec : (defaultEndOfDay ? '59' : '0'), 10)
       );
     }
   }
@@ -170,13 +170,14 @@ export const parseDateTimeUniversal = (input?: string): Date | null => {
   const ymdMatch = str.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
   if (ymdMatch) {
     const [, y, m, d, hour, min, sec] = ymdMatch;
+    const hasTime = hour !== undefined && min !== undefined;
     return new Date(
       parseInt(y, 10),
       parseInt(m, 10) - 1,
       parseInt(d, 10),
-      parseInt(hour || '0', 10),
-      parseInt(min || '0', 10),
-      parseInt(sec || '0', 10)
+      parseInt(hasTime ? hour : (defaultEndOfDay ? '23' : '0'), 10),
+      parseInt(hasTime ? min : (defaultEndOfDay ? '59' : '0'), 10),
+      parseInt(hasTime ? (sec || '0') : (defaultEndOfDay ? '59' : '0'), 10)
     );
   }
 
@@ -185,13 +186,14 @@ export const parseDateTimeUniversal = (input?: string): Date | null => {
   if (dmyMatch) {
     let [, d, m, y, hour, min, sec] = dmyMatch;
     if (y.length === 2) y = '20' + y;
+    const hasTime = hour !== undefined && min !== undefined;
     return new Date(
       parseInt(y, 10),
       parseInt(m, 10) - 1,
       parseInt(d, 10),
-      parseInt(hour || '0', 10),
-      parseInt(min || '0', 10),
-      parseInt(sec || '0', 10)
+      parseInt(hasTime ? hour : (defaultEndOfDay ? '23' : '0'), 10),
+      parseInt(hasTime ? min : (defaultEndOfDay ? '59' : '0'), 10),
+      parseInt(hasTime ? (sec || '0') : (defaultEndOfDay ? '59' : '0'), 10)
     );
   }
 
@@ -485,7 +487,7 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
     let targetTime = 0;
     let targetDateStr = '';
 
-    const parsed = parseDateTimeUniversal(keep);
+    const parsed = parseDateTimeUniversal(keep, true);
     if (parsed && !isNaN(parsed.getTime())) {
       targetTime = parsed.getTime();
       const pad = (n: number) => String(n).padStart(2, '0');
@@ -646,13 +648,22 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
   };
 
   const loadHistory = () => {
-    const allData = getShiftOccurrences() || [];
+    // Busca todas as ocorrências (incluindo as que foram encerradas em turnos posteriores)
+    // para garantir que o histórico dos dias passados permaneça 100% íntegro!
+    const allData = getShiftOccurrences({ includeDeleted: true }) || [];
     const currentInfo = getCurrentShiftInfo();
     
     // History should include explicitly finalized shifts, 
     // AND any shift that is from a past date or different shift period
     const historyData = allData.filter(o => {
       if (!o) return false;
+      
+      // Se foi criado no turno atual de hoje e foi excluído imediatamente, não deve ir pro histórico de dias passados
+      const isDeleted = typeof o.description === 'string' && o.description.includes('[EXCLUÍDO');
+      if (isDeleted && o.date === currentInfo.date && o.shift === currentInfo.shift) {
+        return false;
+      }
+
       // Se foi finalizado, deve aparecer no histórico
       if (o.finalized) return true;
       
@@ -862,14 +873,26 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
       const occ = occurrences.find(o => o.id === id) || history.find(o => o.id === id) || auditOccurrences.find(o => o.id === id);
       if (occ) {
           const now = new Date().toLocaleString('pt-BR');
+          const nowIso = new Date().toISOString();
           const existingAudit = getAuditLog(occ.description);
           const keepInfo = occ.keepUntil ? ` (Item fixo até: ${occ.keepUntil === 'indefinite' ? 'Indeterminado' : occ.keepUntil})` : '';
           const newAudit = existingAudit + `\n[EXCLUÍDO por ${userName} em ${now}${keepInfo}]`;
           const finalDescription = `${getActualDescription(occ.description)}|||AUDIT|||${newAudit}`;
           
-          await updateShiftOccurrence(id, {
-              description: finalDescription
-          });
+          const isFromPastDay = occ.date < shiftDate;
+          if (isFromPastDay && occ.keepUntil) {
+            // Se veio de um dia anterior por retenção e foi excluído hoje,
+            // encerramos a vigência a partir deste momento para não aparecer mais nos plantões futuros,
+            // preservando integralmente o histórico dos dias passados!
+            await updateShiftOccurrence(id, {
+                keepUntil: nowIso,
+                description: finalDescription
+            });
+          } else {
+            await updateShiftOccurrence(id, {
+                description: finalDescription
+            });
+          }
           showMessage('Ocorrência excluída com sucesso.', 'success');
       }
       loadCurrentOccurrences();
@@ -1366,13 +1389,81 @@ const ShiftHandover: React.FC<ShiftHandoverProps> = ({ userName, userRole }) => 
     );
   };
 
-  const historyByDate = (history || []).reduce((acc, occ) => {
-    if (!occ || !occ.date) return acc;
-    const date = occ.date;
-    if (!acc[date]) acc[date] = [];
-    acc[date].push(occ);
+  const historyByDate = useMemo(() => {
+    const acc: Record<string, ShiftOccurrence[]> = {};
+    const seenMap = new Set<string>();
+
+    const addOccToDate = (date: string, occ: ShiftOccurrence, overrideShift?: 'Diurno' | 'Noturno') => {
+      if (!acc[date]) acc[date] = [];
+      const itemKey = `${date}-${overrideShift || occ.shift}-${occ.id}`;
+      if (!seenMap.has(itemKey)) {
+        seenMap.add(itemKey);
+        acc[date].push(overrideShift ? { ...occ, shift: overrideShift } : occ);
+      }
+    };
+
+    // 1. Adiciona as ocorrências na sua data de criação original
+    (history || []).forEach(occ => {
+      if (!occ || !occ.date) return;
+      addOccToDate(occ.date, occ);
+    });
+
+    // 2. Para ocorrências com retenção (keepUntil), projeta a visibilidade nos dias subsequentes até a data/hora limite
+    const allKnownDates = Object.keys(acc);
+    (history || []).forEach(occ => {
+      if (!occ || !occ.date || !occ.keepUntil || occ.type === 'Checklist do Setor') return;
+      
+      const keep = String(occ.keepUntil || '').trim();
+      if (!keep) return;
+
+      const isIndefinite = keep.toLowerCase() === 'indefinite' || keep.toLowerCase() === 'indeterminado';
+      const parsedLimit = parseDateTimeUniversal(keep, true);
+      
+      let limitDateStr = '';
+      let limitHour = 23;
+      
+      if (parsedLimit && !isNaN(parsedLimit.getTime())) {
+        const pad = (n: number) => String(n).padStart(2, '0');
+        limitDateStr = `${parsedLimit.getFullYear()}-${pad(parsedLimit.getMonth() + 1)}-${pad(parsedLimit.getDate())}`;
+        limitHour = parsedLimit.getHours();
+      }
+
+      // Projeta para cada data histórica conhecida que seja posterior a occ.date
+      allKnownDates.forEach(dateStr => {
+        if (dateStr <= occ.date) return; // Já incluído na data de criação original
+        
+        let shouldIncludeDiurno = false;
+        let shouldIncludeNoturno = false;
+
+        if (isIndefinite) {
+          shouldIncludeDiurno = true;
+          shouldIncludeNoturno = true;
+        } else if (limitDateStr) {
+          if (dateStr < limitDateStr) {
+            shouldIncludeDiurno = true;
+            shouldIncludeNoturno = true;
+          } else if (dateStr === limitDateStr) {
+            // No dia limite, verifica o horário
+            if (limitHour >= 6) {
+              shouldIncludeDiurno = true;
+            }
+            if (limitHour >= 18) {
+              shouldIncludeNoturno = true;
+            }
+          }
+        }
+
+        if (shouldIncludeDiurno) {
+          addOccToDate(dateStr, occ, 'Diurno');
+        }
+        if (shouldIncludeNoturno) {
+          addOccToDate(dateStr, occ, 'Noturno');
+        }
+      });
+    });
+
     return acc;
-  }, {} as Record<string, ShiftOccurrence[]>);
+  }, [history]);
 
   const sortedHistoryDates = Object.keys(historyByDate).sort((a, b) => b.localeCompare(a));
 
