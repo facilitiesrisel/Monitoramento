@@ -11,6 +11,7 @@ import AccessControl from './components/AccessControl';
 import InternalTickets from './components/InternalTickets';
 import ShiftHandover from './components/ShiftHandover';
 import BolaPreta from './components/BolaPreta';
+import EmployeeVehicles from './components/EmployeeVehicles';
 import EvaluationForm from './components/EvaluationForm'; 
 import Login from './components/Login'; 
 import { loadData, isSystemOnline, getGoogleSheetConfig, saveGoogleSheetConfig, getGoogleScriptUrl, saveGoogleScriptUrl, sendTestEmail, getInternalTickets, resetGoogleSheetConfig } from './services/dataService';
@@ -36,7 +37,10 @@ const App: React.FC = () => {
       gidShiftHandover: '',
       gidBolaPreta: '',
       gidMacros: '',
-      gidFleet: ''
+      gidFleet: '',
+      sheetIdEmployeeVehicles: '',
+      gidEmployeeVehicles: '',
+      formUrlEmployeeVehicles: ''
   });
   const [scriptUrl, setScriptUrl] = useState('');
   const [selectedDriverId, setSelectedDriverId] = useState<string | undefined>(undefined);
@@ -91,6 +95,7 @@ const App: React.FC = () => {
       { id: 'access-control', roles: ['admin', 'operator'] },
       { id: 'shift-handover', roles: ['admin', 'operator'] },
       { id: 'bola-preta', roles: ['admin', 'operator', 'quality', 'monitor'] },
+      { id: 'employee-vehicles', roles: ['admin', 'operator', 'quality', 'monitor'] },
     ];
 
     return allNavItems.filter(item => {
@@ -219,6 +224,7 @@ const App: React.FC = () => {
         }
         return <div className="p-8 text-center text-red-500 font-black text-rose-600 bg-rose-50 border border-rose-100 rounded-3xl max-w-md mx-auto mt-20">Acesso não autorizado para esta aba.</div>;
       }
+      case 'employee-vehicles': return <EmployeeVehicles userRole={user.role} userName={user.name} />;
       default: return (user.role === 'admin' || user.role === 'quality') ? <Dashboard userRole={user.role} onNavigate={setActiveTab} /> : <EvaluationsTable userRole={user.role} userName={user.name} />;
     }
   };
@@ -326,6 +332,18 @@ const App: React.FC = () => {
                         <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">GID: Frota</label>
                             <input type="text" value={sheetConfig.gidFleet || ''} onChange={e => setSheetConfig({...sheetConfig, gidFleet: e.target.value})} className="w-full border rounded-lg p-2 text-sm" placeholder="ID da Aba Frota" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Sheet ID: Veículos Func.</label>
+                            <input type="text" value={sheetConfig.sheetIdEmployeeVehicles || ''} onChange={e => setSheetConfig({...sheetConfig, sheetIdEmployeeVehicles: e.target.value})} className="w-full border rounded-lg p-2 text-sm" placeholder="ID Planilha Veículos Funcionários" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">GID: Veículos Func.</label>
+                            <input type="text" value={sheetConfig.gidEmployeeVehicles || ''} onChange={e => setSheetConfig({...sheetConfig, gidEmployeeVehicles: e.target.value})} className="w-full border rounded-lg p-2 text-sm" placeholder="ID da Aba Veículos Funcionários" />
+                        </div>
+                        <div className="md:col-span-2">
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">URL Formulário Cadastro Veículos</label>
+                            <input type="text" value={sheetConfig.formUrlEmployeeVehicles || ''} onChange={e => setSheetConfig({...sheetConfig, formUrlEmployeeVehicles: e.target.value})} className="w-full border rounded-lg p-2 text-sm" placeholder="https://docs.google.com/forms/d/..." />
                         </div>
                         <div className="md:col-span-2 flex justify-end">
                              <button onClick={handleSaveSheetConfig} className="px-4 py-2 border border-primary text-primary rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-primary hover:text-white transition-all"><Save size={14} /> Atualizar Mapeamento</button>

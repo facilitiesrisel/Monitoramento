@@ -217,3 +217,21 @@ export interface ShiftOccurrence {
   createdAt: string;
   keepUntil?: string; // 'YYYY-MM-DD' | 'indefinite' | ''
 }
+
+export interface EmployeeVehicle {
+  id: string;
+  rowIndex?: number; // Linha física 1-indexed na planilha para updates precisos
+  timestamp: string;
+  employeeName: string;
+  phone: string;
+  extension: string;
+  department: string;
+  entryTime: string;
+  exitTime: string;
+  plate: string;
+  brand: string;
+  model: string;
+  color: string;
+  type: 'CARRO' | 'MOTO' | string;
+  source?: 'google' | 'sharepoint' | string;
+}

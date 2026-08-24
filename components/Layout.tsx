@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { LayoutDashboard, Users, AlertTriangle, Menu, Settings, ClipboardList, LogOut, Shield, Bot, X, ChevronLeft, ChevronRight, Warehouse, Truck, Ticket, ClipboardCheck, ShieldAlert } from 'lucide-react';
+import { LayoutDashboard, Users, AlertTriangle, Menu, Settings, ClipboardList, LogOut, Shield, Bot, X, ChevronLeft, ChevronRight, Warehouse, Truck, Ticket, ClipboardCheck, ShieldAlert, Car } from 'lucide-react';
 import { UserRole } from '../types';
 
 interface LayoutProps {
@@ -48,6 +48,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, onOp
     { id: 'access-control', label: 'Controle de Acesso', icon: Warehouse, roles: ['admin', 'operator'] },
     { id: 'shift-handover', label: 'Passagem de Plantão', icon: ClipboardCheck, roles: ['admin', 'operator'] },
     { id: 'bola-preta', label: 'Análise de Viagem', icon: ShieldAlert, roles: ['admin', 'operator', 'quality', 'monitor'] },
+    { id: 'employee-vehicles', label: 'Veículos Funcionários', icon: Car, roles: ['admin', 'operator', 'quality', 'monitor'] },
   ];
 
   const visibleNavItems = allNavItems.filter(item => {

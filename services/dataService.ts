@@ -1,5 +1,6 @@
 
-import { Evaluation, DriverStats, VehicleStats, DashboardMetrics, DriverProfile, DashboardFilters, EvaluatorStats, OperatorProfile, PriorityDriverStatus, AccessLog, UserRole, InternalTicket, DriverJustification, ShiftOccurrence, BolaPreta } from '../types';
+import { Evaluation, DriverStats, VehicleStats, DashboardMetrics, DriverProfile, DashboardFilters, EvaluatorStats, OperatorProfile, PriorityDriverStatus, AccessLog, UserRole, InternalTicket, DriverJustification, ShiftOccurrence, BolaPreta, EmployeeVehicle } from '../types';
+import * as XLSX from 'xlsx';
 
 // --- CONSTANTES E CONFIGURAÇÕES PADRÃO ---
 export const DEFAULT_SHEET_ID = "1SGVD01AwpwVTbkQRVF1vfLbKzRmgJs-GBPKQd1pOfLU";
@@ -12,10 +13,14 @@ export const DEFAULT_GID_SHIFT_HANDOVER = "1195850538"; // Aba: Passagem de Plan
 export const DEFAULT_GID_BOLA_PRETA = "1795892818";     // Aba: Bola Preta
 export const DEFAULT_GID_MACROS = "1523982576";                 // Aba: Macros
 export const DEFAULT_GID_FLEET = "896980151";                  // Aba: Frota (Novo)
+export const DEFAULT_SHEET_ID_EMPLOYEE_VEHICLES = "1NHA1yE9eUWQZLXvEYN0j6HzauxMgLpN_tCXig97HgBU"; // Planilha Veículos Funcionários
+export const DEFAULT_GID_EMPLOYEE_VEHICLES = "526754414"; // Aba Veículos Funcionários
+export const DEFAULT_FORM_URL_EMPLOYEE_VEHICLES = "https://docs.google.com/forms/d/1EgVoCMP1qoy0TOFs600pJ0dC5ZMseb4jfSKI2rtr6wg/edit";
+export const DEFAULT_SHAREPOINT_EXCEL_URL = "https://riselcombustiveis-my.sharepoint.com/:x:/g/personal/deny_goncalves_risel_com_br/IQDvB_WI4DAJRqI5YBLPPVikAcz3rrrVEgKW__Ba3fdrHOo?download=1";
 
 // ATENÇÃO: Atualize esta URL se você criar uma NOVA implantação.
 // Se usar "Gerenciar Implantações > Nova Versão", a URL mantém-se a mesma.
-export const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw1uKpDRYnhh-DucjiQiuPjBr1Z_RA79jYJJeFhxo4nGEx3V-Vs3QEUIpto0KVPFSyGCA/exec";
+export const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxG0AkwhpYldpfvuoh6m_GXek461cdn-9qH9g39kyTtQwY3sB2JaTOME35quQXajzCBbA/exec";
 
 export const DEFAULT_DRIVE_FOLDER_ID = "1QjcgNaMbyQECI5u_g1UAPW5ZySJ9dkJv"; 
 
@@ -32,6 +37,7 @@ let shiftOccurrences: ShiftOccurrence[] = [];
 let bolaPretaRecords: BolaPreta[] = [];
 let macroData: any[] = [];
 let fleetData: any[] = [];
+let employeeVehicles: EmployeeVehicle[] = [];
 let pendingOperations = 0;
 let lastOperationTime = 0;
 let driverOverrides: Record<string, { hasCamera?: boolean }> = {};
@@ -46,7 +52,10 @@ let globalSheetConfig = {
     gidShiftHandover: DEFAULT_GID_SHIFT_HANDOVER,
     gidBolaPreta: DEFAULT_GID_BOLA_PRETA,
     gidMacros: DEFAULT_GID_MACROS,
-    gidFleet: DEFAULT_GID_FLEET
+    gidFleet: DEFAULT_GID_FLEET,
+    sheetIdEmployeeVehicles: DEFAULT_SHEET_ID_EMPLOYEE_VEHICLES,
+    gidEmployeeVehicles: DEFAULT_GID_EMPLOYEE_VEHICLES,
+    formUrlEmployeeVehicles: DEFAULT_FORM_URL_EMPLOYEE_VEHICLES
 };
 let globalScriptUrl = DEFAULT_SCRIPT_URL;
 
@@ -91,6 +100,9 @@ const syncLocalState = () => {
                 if (!parsed.gidMacros || parsed.gidMacros === "0") parsed.gidMacros = DEFAULT_GID_MACROS;
                 if (!parsed.gidFleet || parsed.gidFleet === "0" || parsed.gidFleet === "1806306509") parsed.gidFleet = DEFAULT_GID_FLEET;
                 if (!parsed.gidBolaPreta || parsed.gidBolaPreta === "0") parsed.gidBolaPreta = DEFAULT_GID_BOLA_PRETA;
+                if (!parsed.sheetIdEmployeeVehicles) parsed.sheetIdEmployeeVehicles = DEFAULT_SHEET_ID_EMPLOYEE_VEHICLES;
+                if (!parsed.gidEmployeeVehicles || parsed.gidEmployeeVehicles === "0") parsed.gidEmployeeVehicles = DEFAULT_GID_EMPLOYEE_VEHICLES;
+                if (!parsed.formUrlEmployeeVehicles) parsed.formUrlEmployeeVehicles = DEFAULT_FORM_URL_EMPLOYEE_VEHICLES;
                 globalSheetConfig = { ...globalSheetConfig, ...parsed };
                 // Salva de volta para garantir que a atualização fique persistente
                 safeLocalStorageSetItem('risel_sheet_config', JSON.stringify(globalSheetConfig));
@@ -202,7 +214,10 @@ export const resetGoogleSheetConfig = async () => {
     gidShiftHandover: DEFAULT_GID_SHIFT_HANDOVER,
     gidBolaPreta: DEFAULT_GID_BOLA_PRETA,
     gidMacros: DEFAULT_GID_MACROS,
-    gidFleet: DEFAULT_GID_FLEET
+    gidFleet: DEFAULT_GID_FLEET,
+    sheetIdEmployeeVehicles: DEFAULT_SHEET_ID_EMPLOYEE_VEHICLES,
+    gidEmployeeVehicles: DEFAULT_GID_EMPLOYEE_VEHICLES,
+    formUrlEmployeeVehicles: DEFAULT_FORM_URL_EMPLOYEE_VEHICLES
   };
   globalSheetConfig = defaults;
   safeLocalStorageSetItem('risel_sheet_config', JSON.stringify(defaults));
@@ -603,7 +618,256 @@ export const loadData = async (cacheBust = true): Promise<void> => {
           }));
       }
   }
+
+  // Carrega Veículos de Funcionários
+  await loadEmployeeVehicles(cacheBust);
 };
+
+export const loadEmployeeVehicles = async (cacheBust = true): Promise<EmployeeVehicle[]> => {
+  const { sheetIdEmployeeVehicles, gidEmployeeVehicles } = globalSheetConfig as any;
+  const sId = sheetIdEmployeeVehicles || DEFAULT_SHEET_ID_EMPLOYEE_VEHICLES;
+  const gid = gidEmployeeVehicles || DEFAULT_GID_EMPLOYEE_VEHICLES;
+
+  let allVehicles: EmployeeVehicle[] = [];
+
+  // 1. Carregar da Planilha Google
+  try {
+    const url = `https://docs.google.com/spreadsheets/d/${sId}/export?format=csv&gid=${gid}${cacheBust ? '&t=' + Date.now() : ''}`;
+    const res = await fetch(url);
+    if (res.ok) {
+      const text = await res.text();
+      if (text && !text.startsWith('<!D')) {
+        const rows = parseCSV(text);
+        // Header: Carimbo de data/hora, Nome Completo, Telefone para Contato, Ramal (Caso possua), Setor, Horário de Entrada (Habitual), Horário de Saída (Habitual), Placa do Veículo, Marca, Modelo, Cor, CARRO OU MOTO?
+        const gVehicles = rows.slice(1).map((r, index) => {
+          const timestamp = (r[0] || '').trim();
+          const employeeName = (r[1] || '').trim();
+          const phone = (r[2] || '').trim();
+          const extension = (r[3] || '').trim();
+          const department = (r[4] || '').trim();
+          const entryTime = (r[5] || '').trim();
+          const exitTime = (r[6] || '').trim();
+          const plate = (r[7] || '').trim().toUpperCase();
+          const brand = (r[8] || '').trim().toUpperCase();
+          const model = (r[9] || '').trim();
+          const color = (r[10] || '').trim();
+          let rawType = (r[11] || '').trim().toUpperCase();
+          let type = 'CARRO';
+          if (rawType.includes('MOTO')) {
+            type = 'MOTO';
+          } else if (rawType.includes('CARRO')) {
+            type = 'CARRO';
+          } else {
+            type = rawType || 'CARRO';
+          }
+
+          return {
+            id: `emp-veh-g-${index}-${plate.replace(/[^a-zA-Z0-9]/g, '') || Math.random().toString(36).substring(2, 7)}`,
+            rowIndex: index + 2, // 1-indexed (linha 1 é o cabeçalho)
+            timestamp,
+            employeeName,
+            phone,
+            extension,
+            department,
+            entryTime,
+            exitTime,
+            plate,
+            brand,
+            model,
+            color,
+            type,
+            source: 'google'
+          };
+        }).filter(item => item.employeeName || item.plate);
+
+        allVehicles.push(...gVehicles);
+      }
+    }
+  } catch (e) {
+    console.error("Erro ao carregar veículos do Google Sheets:", e);
+  }
+
+  // 2. Carregar do SharePoint / OneDrive Excel (.xlsx) via API Backend ou Cache Local
+  try {
+    let spVehicles: EmployeeVehicle[] = [];
+    const spRes = await fetch(`/api/sharepoint-vehicles${cacheBust ? '?_t=' + Date.now() : ''}`);
+    if (spRes.ok) {
+      const contentType = spRes.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const data = await spRes.json();
+        const excelRows: any[][] = data.rows || [];
+        if (excelRows && excelRows.length > 1) {
+          spVehicles = excelRows.slice(1).map((r: any[], index: number) => {
+            const getCol = (idx: number) => (r[idx] !== undefined && r[idx] !== null ? String(r[idx]).trim() : '');
+
+            const employeeName = getCol(5);
+            const phone = getCol(6);
+            const extension = getCol(7);
+            const department = getCol(8);
+            const entryTime = getCol(9);
+            const exitTime = getCol(10);
+            const rawType = getCol(11);
+            const plate = getCol(12);
+            const brand = getCol(13);
+            const model = getCol(14);
+            const color = getCol(15);
+            const timestamp = getCol(0);
+
+            let type = 'CARRO';
+            if (rawType.toUpperCase().includes('MOTO')) {
+              type = 'MOTO';
+            } else {
+              type = 'CARRO';
+            }
+
+            return {
+              id: `emp-veh-sp-${index}-${(plate || 'NOPLATE').replace(/[^a-zA-Z0-9]/g, '') || Math.random().toString(36).substring(2, 7)}`,
+              rowIndex: index + 2,
+              timestamp,
+              employeeName: employeeName || 'Colaborador (Excel)',
+              phone,
+              extension,
+              department: department || 'Geral',
+              entryTime,
+              exitTime,
+              plate: plate.toUpperCase(),
+              brand: brand.toUpperCase(),
+              model: model || 'Veículo',
+              color: color || 'Não inf.',
+              type,
+              source: 'sharepoint'
+            };
+          }).filter(item => item.employeeName || item.plate);
+
+          if (spVehicles.length > 0) {
+            try {
+              localStorage.setItem('risel_cached_sharepoint_vehicles', JSON.stringify(spVehicles));
+            } catch (err) {}
+          }
+        }
+      }
+    }
+
+    if (spVehicles.length === 0) {
+      // Tenta carregar do cache local caso o SharePoint exija login ou esteja indisponível
+      try {
+        const cached = localStorage.getItem('risel_cached_sharepoint_vehicles');
+        if (cached) {
+          spVehicles = JSON.parse(cached);
+        }
+      } catch (err) {}
+    }
+
+    if (spVehicles.length > 0) {
+      allVehicles.push(...spVehicles);
+    }
+  } catch (e) {
+    console.error("Erro ao carregar veículos do SharePoint Excel:", e);
+    try {
+      const cached = localStorage.getItem('risel_cached_sharepoint_vehicles');
+      if (cached) {
+        const spVehicles = JSON.parse(cached);
+        allVehicles.push(...spVehicles);
+      }
+    } catch (err) {}
+  }
+
+  employeeVehicles = allVehicles;
+  return employeeVehicles;
+};
+
+export const getEmployeeVehicles = (): EmployeeVehicle[] => {
+  return employeeVehicles;
+};
+
+export const saveEmployeeVehicle = async (vehicle: EmployeeVehicle, isNew = false): Promise<boolean> => {
+  const { sheetIdEmployeeVehicles, gidEmployeeVehicles } = globalSheetConfig as any;
+  const sId = sheetIdEmployeeVehicles || DEFAULT_SHEET_ID_EMPLOYEE_VEHICLES;
+  const gid = gidEmployeeVehicles || DEFAULT_GID_EMPLOYEE_VEHICLES;
+
+  const now = new Date();
+  const timestamp = vehicle.timestamp || `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+
+  const row = [
+    timestamp,
+    vehicle.employeeName || '',
+    vehicle.phone || '',
+    vehicle.extension || '',
+    vehicle.department || '',
+    vehicle.entryTime || '',
+    vehicle.exitTime || '',
+    vehicle.plate || '',
+    vehicle.brand || '',
+    vehicle.model || '',
+    vehicle.color || '',
+    vehicle.type || 'CARRO'
+  ];
+
+  if (isNew) {
+    const newVehicle: EmployeeVehicle = {
+      ...vehicle,
+      id: vehicle.id || `emp-veh-${Date.now()}`,
+      timestamp,
+      rowIndex: employeeVehicles.length + 2
+    };
+    employeeVehicles = [newVehicle, ...employeeVehicles];
+  } else {
+    employeeVehicles = employeeVehicles.map(v => (v.id === vehicle.id ? { ...vehicle, timestamp: vehicle.timestamp || timestamp } : v));
+  }
+
+  pendingOperations++;
+  lastOperationTime = Date.now();
+
+  try {
+    await callAppsScript({
+      type: isNew ? 'addEmployeeVehicle' : 'updateEmployeeVehicle',
+      sheetId: sId,
+      gid: gid,
+      rowIndex: vehicle.rowIndex,
+      timestamp: vehicle.timestamp,
+      plate: vehicle.plate,
+      name: vehicle.employeeName,
+      row: row
+    });
+    return true;
+  } catch (err) {
+    console.error("Erro ao salvar veículo de funcionário na planilha:", err);
+    return false;
+  } finally {
+    pendingOperations--;
+  }
+};
+
+export const deleteEmployeeVehicle = async (vehicle: EmployeeVehicle): Promise<boolean> => {
+  const { sheetIdEmployeeVehicles, gidEmployeeVehicles } = globalSheetConfig as any;
+  const sId = sheetIdEmployeeVehicles || DEFAULT_SHEET_ID_EMPLOYEE_VEHICLES;
+  const gid = gidEmployeeVehicles || DEFAULT_GID_EMPLOYEE_VEHICLES;
+
+  employeeVehicles = employeeVehicles.filter(v => v.id !== vehicle.id);
+
+  pendingOperations++;
+  lastOperationTime = Date.now();
+
+  try {
+    await callAppsScript({
+      type: 'deleteEmployeeVehicle',
+      sheetId: sId,
+      gid: gid,
+      rowIndex: vehicle.rowIndex,
+      timestamp: vehicle.timestamp,
+      plate: vehicle.plate,
+      name: vehicle.employeeName
+    });
+    return true;
+  } catch (err) {
+    console.error("Erro ao excluir veículo de funcionário na planilha:", err);
+    return false;
+  } finally {
+    pendingOperations--;
+  }
+};
+
+
 
 export const saveEvaluation = async (data: any, existingId?: string) => {
     const docId = existingId || `web-${Date.now()}-${Math.floor(Math.random() * 1000)}`;

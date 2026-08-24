@@ -16,7 +16,8 @@ const AVAILABLE_MENUS = [
   { id: 'operators', label: '🛡️ Acessos (Ops)', desc: 'Gerenciamento de operados, acessos e permissões' },
   { id: 'access-control', label: '🏢 Controle de Acesso', desc: 'Registro de entrada/saída de veículos e portaria' },
   { id: 'shift-handover', label: '📝 Passagem de Plantão', desc: 'Ocorrências e transferência de turnos de trabalho' },
-  { id: 'bola-preta', label: '🚨 Análise de Viagem', desc: 'Mapeamento de comportamentos e conformidades' }
+  { id: 'bola-preta', label: '🚨 Análise de Viagem', desc: 'Mapeamento de comportamentos e conformidades' },
+  { id: 'employee-vehicles', label: '🚗 Veículos Funcionários', desc: 'Lista, identificação e contato de veículos de funcionários' }
 ];
 
 const OperatorsList: React.FC<OperatorsListProps> = ({ currentUser }) => {

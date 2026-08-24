@@ -39,6 +39,15 @@
     </script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
+      /* Fallback for Aptos Narrow */
+      @font-face {
+        font-family: 'Aptos Narrow';
+        src: local('Aptos Narrow'), local('Aptos'), local('Segoe UI'), local('Arial Narrow'), local('Calibri');
+      }
+      .font-aptos-narrow {
+        font-family: 'Aptos Narrow', 'Segoe UI', 'Arial Narrow', 'Calibri', 'Inter', sans-serif;
+        letter-spacing: -0.01em;
+      }
       /* Custom Scrollbar for Clean Look */
       ::-webkit-scrollbar {
         width: 6px;

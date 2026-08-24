@@ -187,7 +187,8 @@ function doPost(e) {
          'addAccessLog', 'updateAccessLog', 'deleteAccessLog',
          'deleteTicket', 'addShiftOccurrence', 'updateShiftOccurrence', 'deleteShiftOccurrence',
          'addBolaPreta', 'updateBolaPreta', 'deleteBolaPreta', 'macroSync',
-         'addFleet', 'updateFleet', 'deleteFleet'].includes(data.type)) {
+         'addFleet', 'updateFleet', 'deleteFleet',
+         'addEmployeeVehicle', 'updateEmployeeVehicle', 'deleteEmployeeVehicle'].includes(data.type)) {
        
        var targetSheet = getSheetByGid(ss, data.gid);
        
@@ -217,6 +218,51 @@ function doPost(e) {
                   });
                   targetSheet.getRange(startRow, 1, data.rows.length, maxCols).setValues(data.rows);
                }
+           } else if (data.type === 'updateEmployeeVehicle' || data.type === 'deleteEmployeeVehicle') {
+               var tRows = targetSheet.getDataRange().getValues();
+               var updated = false;
+               
+               // Se foi fornecido o rowIndex direto
+               if (data.rowIndex && data.rowIndex > 1 && data.rowIndex <= tRows.length) {
+                   if (data.type === 'deleteEmployeeVehicle') {
+                       targetSheet.deleteRow(data.rowIndex);
+                       updated = true;
+                   } else if (data.row) {
+                       targetSheet.getRange(data.rowIndex, 1, 1, data.row.length).setValues([data.row]);
+                       updated = true;
+                   }
+               }
+               
+               // Se não encontrou por rowIndex, busca por timestamp / nome / placa
+               if (!updated) {
+                   var targetTs = String(data.timestamp || "").trim();
+                   var targetPlate = String(data.plate || "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+                   var targetName = String(data.name || data.employeeName || "").trim().toLowerCase();
+                   
+                   for (var k = 1; k < tRows.length; k++) {
+                       var rowTs = String(tRows[k][0] || "").trim();
+                       var rowName = String(tRows[k][1] || "").trim().toLowerCase();
+                       var rowPlate = String(tRows[k][7] || "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+                       
+                       var match = false;
+                       if (targetTs && rowTs === targetTs && (targetPlate === rowPlate || targetName === rowName)) {
+                           match = true;
+                       } else if (targetPlate && rowPlate === targetPlate) {
+                           match = true;
+                       } else if (targetName && rowName === targetName) {
+                           match = true;
+                       }
+                       
+                       if (match) {
+                           if (data.type === 'deleteEmployeeVehicle') {
+                               targetSheet.deleteRow(k + 1);
+                           } else if (data.row) {
+                               targetSheet.getRange(k + 1, 1, 1, data.row.length).setValues([data.row]);
+                           }
+                           break;
+                       }
+                   }
+               }
            } else if (!data.type.includes('delete') && !data.type.includes('update')) { // Add
                if (data.row) targetSheet.appendRow(data.row);
            } else {
@@ -237,6 +283,7 @@ function doPost(e) {
                    }
                }
            }
+
            
            if ((data.type === 'addBolaPreta' || data.type === 'updateBolaPreta') && data.files) {
                processFiles(data.files, IMAGE_FOLDER_ID);
