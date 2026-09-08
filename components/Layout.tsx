@@ -251,8 +251,8 @@ const Layout: React.FC<LayoutProps> = ({
         </header>
 
         {/* Content Area with responsive bottom padding for the mobile navigation bar */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-4 pb-28 lg:pb-4 relative scroll-smooth flex flex-col">
-           <div className="w-full h-full flex flex-col">
+        <div id="main-content-scroll" className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 pb-36 lg:pb-8 relative scroll-smooth">
+           <div className="w-full min-w-0">
              {children}
            </div>
         </div>

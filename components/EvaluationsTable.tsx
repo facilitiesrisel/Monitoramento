@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { getRawEvaluations, getManagedDrivers, getPriorityDrivers, getDashboardMetrics, getEvaluatorStats, getDriverStats, normalizeEvaluatorName, getWeeksInMonth, getActiveOperatorCount, sendTestEmail, loadData, deleteEvaluation, downloadEvaluationsCSV, resendEvaluationEmail, getDriverTargetForPeriod, getDriverWeekTargetForPeriod } from '../services/dataService';
+import { getRawEvaluations, getManagedDrivers, getPriorityDrivers, getDashboardMetrics, getEvaluatorStats, getDriverStats, normalizeEvaluatorName, getWeeksInMonth, getActiveOperatorCount, sendTestEmail, loadData, deleteEvaluation, downloadEvaluationsCSV, resendEvaluationEmail, getDriverTargetForPeriod, getDriverWeekTargetForPeriod, parseInactivationDate } from '../services/dataService';
 import { DriverProfile, Evaluation, UserRole, PriorityDriverStatus } from '../types';
 import { EvaluationReportView } from './EvaluationReportView';
 import { 
@@ -32,6 +32,8 @@ interface ExtendedPriorityData {
     yearTarget: number;
     isMonthDone: boolean;
     isWeekDone: boolean;
+    isInactiveInPeriod: boolean;
+    inactivationDateFormatted?: string;
     weeksBreakdown: { week: number, target: number, realized: number }[];
 }
 
@@ -68,6 +70,7 @@ const EvaluationsTable: React.FC<EvaluationsTableProps> = ({ userRole, userName,
   const [pendingFilterMonth, setPendingFilterMonth] = useState<number>(new Date().getMonth());
   const [pendingFilterWeek, setPendingFilterWeek] = useState<number | ''>('');
   const [pendingViewMode, setPendingViewMode] = useState<'cards' | 'list'>('cards');
+  const [pendingFilterOnlyPending, setPendingFilterOnlyPending] = useState(true);
   // Ordenação da tabela de pendências
   const [pendingSortConfig, setPendingSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'name', direction: 'asc' });
 
@@ -265,6 +268,17 @@ const EvaluationsTable: React.FC<EvaluationsTableProps> = ({ userRole, userName,
               weeksBreakdown.push({ week: w, target: targetForW, realized: realizedForW });
           }
 
+          const inactDate = driver.inactivationDate ? parseInactivationDate(driver.inactivationDate) : null;
+          const isInactiveInPeriod = driver.isActive === false && (
+              !inactDate ||
+              currentYear > inactDate.getFullYear() ||
+              (currentYear === inactDate.getFullYear() && pendingFilterMonth > inactDate.getMonth()) ||
+              (currentYear === inactDate.getFullYear() && pendingFilterMonth === inactDate.getMonth() && (
+                  pendingFilterWeek !== '' ? Number(pendingFilterWeek) >= Math.ceil(inactDate.getDate() / 7) : true
+              ))
+          );
+          const inactivationDateFormatted = inactDate ? inactDate.toLocaleDateString('pt-BR') : undefined;
+
           return {
               driver,
               weekCount,
@@ -273,8 +287,10 @@ const EvaluationsTable: React.FC<EvaluationsTableProps> = ({ userRole, userName,
               monthTarget: adjustedMonthTarget,
               yearCount,
               yearTarget,
-              isMonthDone: adjustedMonthTarget === 0 || monthCount >= adjustedMonthTarget,
-              isWeekDone: adjustedWeekTarget === 0 || weekCount >= adjustedWeekTarget,
+              isMonthDone: adjustedMonthTarget === 0 || monthCount >= adjustedMonthTarget || isInactiveInPeriod,
+              isWeekDone: adjustedWeekTarget === 0 || weekCount >= adjustedWeekTarget || isInactiveInPeriod,
+              isInactiveInPeriod,
+              inactivationDateFormatted,
               weeksBreakdown
           };
       });
@@ -316,6 +332,15 @@ const EvaluationsTable: React.FC<EvaluationsTableProps> = ({ userRole, userName,
 
       setPendingDrivers(calculatedData);
   }, [isPendingModalOpen, pendingFilterMonth, pendingFilterWeek, lastUpdate, currentYear, pendingViewMode, pendingSortConfig]);
+
+  const displayedPendingDrivers = useMemo(() => {
+      return pendingDrivers.filter(d => {
+          if (pendingFilterOnlyPending) {
+              return pendingFilterWeek !== '' ? !d.isWeekDone : !d.isMonthDone;
+          }
+          return true;
+      });
+  }, [pendingDrivers, pendingFilterOnlyPending, pendingFilterWeek]);
 
   const handleOpenPending = () => setIsPendingModalOpen(true);
 
@@ -794,10 +819,28 @@ const EvaluationsTable: React.FC<EvaluationsTableProps> = ({ userRole, userName,
                   <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-6 border-b border-slate-100 pb-4 gap-4">
                       <div>
                           <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2"><AlertTriangle className="text-[#ffa000]" /> Pendências de Avaliação</h3>
-                          <p className="text-sm text-slate-500">Cálculo baseado apenas em motoristas com Câmera SIM.</p>
+                          <p className="text-sm text-slate-500">Cálculo baseado em motoristas com Câmera SIM. Motoristas inativados não geram novas metas.</p>
                       </div>
                       
-                      <div className="flex flex-wrap items-center gap-4">
+                      <div className="flex flex-wrap items-center gap-3">
+                          {/* Alternância Apenas Pendentes vs Todos */}
+                          <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
+                              <button 
+                                onClick={() => setPendingFilterOnlyPending(true)}
+                                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${pendingFilterOnlyPending ? 'bg-[#ffa000] text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                              >
+                                <AlertTriangle size={13} />
+                                <span>Pendentes ({pendingDrivers.filter(d => pendingFilterWeek !== '' ? !d.isWeekDone : !d.isMonthDone).length})</span>
+                              </button>
+                              <button 
+                                onClick={() => setPendingFilterOnlyPending(false)}
+                                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${!pendingFilterOnlyPending ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                              >
+                                <Users size={13} />
+                                <span>Todos ({pendingDrivers.length})</span>
+                              </button>
+                          </div>
+
                           {/* Botões de Alternância de Visão */}
                           <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
                                <button 
@@ -810,11 +853,11 @@ const EvaluationsTable: React.FC<EvaluationsTableProps> = ({ userRole, userName,
                                  onClick={() => setPendingViewMode('list')}
                                  className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-2 ${pendingViewMode === 'list' ? 'bg-white text-[#00ad74] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                                >
-                                 <List size={14} /> Visão em Lista
+                                 <List size={14} /> Tabela
                                </button>
                           </div>
 
-                          <div className="w-px h-8 bg-slate-200 mx-2 hidden md:block"></div>
+                          <div className="w-px h-8 bg-slate-200 mx-1 hidden md:block"></div>
 
                           <div className="flex flex-col">
                               <label className="text-[10px] font-bold text-slate-400 uppercase">Mês</label>
@@ -832,35 +875,71 @@ const EvaluationsTable: React.FC<EvaluationsTableProps> = ({ userRole, userName,
                                   {[1,2,3,4,5].map(w => <option key={w} value={w}>Semana {w}</option>)}
                               </select>
                           </div>
-                          <button onClick={() => setIsPendingModalOpen(false)} className="mt-4 p-2 hover:bg-slate-100 rounded-full transition-colors"><X size={24} className="text-slate-400"/></button>
+                          <button onClick={() => setIsPendingModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X size={24} className="text-slate-400"/></button>
                       </div>
                   </div>
                   
                   <div className="overflow-y-auto flex-1 p-1 rounded-lg">
-                      {pendingViewMode === 'cards' ? (
+                      {displayedPendingDrivers.length === 0 ? (
+                          <div className="p-12 text-center text-slate-500 bg-slate-50 rounded-xl border border-dashed border-slate-200 my-6">
+                              <CheckCircle className="mx-auto mb-3 text-[#00ad74]" size={40}/>
+                              <div className="font-bold text-base text-slate-700">Nenhuma pendência encontrada!</div>
+                              <div className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+                                  {pendingFilterOnlyPending 
+                                      ? "Todos os motoristas ativos com câmera estão com as avaliações em dia para este período." 
+                                      : "Nenhum motorista corresponde aos filtros selecionados."}
+                              </div>
+                          </div>
+                      ) : pendingViewMode === 'cards' ? (
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                              {pendingDrivers.filter(d => pendingFilterWeek !== '' ? !d.isWeekDone : !d.isMonthDone).map((item, idx) => (
-                                  <div key={idx} className="bg-white border rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
-                                      <div className="font-bold text-slate-800 text-sm mb-1">{item.driver.name}</div>
-                                      <div className="text-[10px] text-slate-500 font-bold mb-3 uppercase">{item.driver.base}</div>
+                              {displayedPendingDrivers.map((item, idx) => (
+                                  <div key={idx} className={`bg-white border rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow ${item.driver.isActive === false ? 'opacity-80 border-slate-200 bg-slate-50/50' : ''}`}>
+                                      <div className="flex items-start justify-between gap-2 mb-1">
+                                          <div className="font-bold text-slate-800 text-sm">{item.driver.name}</div>
+                                          {item.driver.isActive === false && (
+                                              <span className="text-[9px] bg-slate-200 text-slate-600 font-bold px-1.5 py-0.5 rounded whitespace-nowrap">INATIVO</span>
+                                          )}
+                                      </div>
+                                      <div className="text-[10px] text-slate-500 font-bold mb-3 uppercase flex items-center justify-between">
+                                          <span>{item.driver.base}</span>
+                                          {item.inactivationDateFormatted && (
+                                              <span className="text-[9px] text-slate-400">Inativo em {item.inactivationDateFormatted}</span>
+                                          )}
+                                      </div>
                                       <div className="space-y-2">
                                           {pendingFilterWeek !== '' ? (
                                               <>
-                                                  <div className="flex justify-between text-[10px] font-bold text-slate-500"><span>Semana Selecionada</span><span>{item.weekCount} / {item.weekTarget}</span></div>
+                                                  <div className="flex justify-between text-[10px] font-bold text-slate-500">
+                                                      <span>Semana Selecionada</span>
+                                                      <span>{item.weekCount} / {item.weekTarget}</span>
+                                                  </div>
                                                   <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                                                      <div className={`h-full ${item.weekCount === 0 ? 'bg-red-500' : 'bg-[#00ad74]'}`} style={{width: `${item.weekTarget > 0 ? (item.weekCount / item.weekTarget) * 100 : 100}%`}}></div>
+                                                      <div className={`h-full ${item.weekTarget === 0 ? 'bg-slate-300' : item.weekCount === 0 ? 'bg-red-500' : 'bg-[#00ad74]'}`} style={{width: `${item.weekTarget > 0 ? Math.min(100, (item.weekCount / item.weekTarget) * 100) : 100}%`}}></div>
                                                   </div>
                                               </>
                                           ) : (
                                               <>
-                                                  <div className="flex justify-between text-[10px] font-bold text-slate-500"><span>Mês Selecionado</span><span>{item.monthCount} / {item.monthTarget}</span></div>
+                                                  <div className="flex justify-between text-[10px] font-bold text-slate-500">
+                                                      <span>Mês Selecionado</span>
+                                                      <span>{item.monthCount} / {item.monthTarget}</span>
+                                                  </div>
                                                   <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                                                      <div className={`h-full ${item.monthCount === 0 ? 'bg-red-500' : 'bg-[#ffa000]'}`} style={{width: `${item.monthTarget > 0 ? (item.monthCount / item.monthTarget) * 100 : 100}%`}}></div>
+                                                      <div className={`h-full ${item.monthTarget === 0 ? 'bg-slate-300' : item.monthCount === 0 ? 'bg-red-500' : 'bg-[#ffa000]'}`} style={{width: `${item.monthTarget > 0 ? Math.min(100, (item.monthCount / item.monthTarget) * 100) : 100}%`}}></div>
                                                   </div>
                                               </>
                                           )}
                                       </div>
-                                      <button onClick={() => { setIsPendingModalOpen(false); onEvaluateDriver && onEvaluateDriver(item.driver.id); }} className="w-full mt-4 bg-slate-800 text-white text-xs font-bold py-2 rounded-lg hover:bg-slate-700 transition-colors">Avaliar Agora</button>
+                                      <button 
+                                          disabled={item.driver.isActive === false}
+                                          onClick={() => { 
+                                              if (item.driver.isActive === false) return;
+                                              setIsPendingModalOpen(false); 
+                                              onEvaluateDriver && onEvaluateDriver(item.driver.id); 
+                                          }} 
+                                          className={`w-full mt-4 text-xs font-bold py-2 rounded-lg transition-colors ${item.driver.isActive === false ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-slate-800 text-white hover:bg-slate-700'}`}
+                                      >
+                                          {item.driver.isActive === false ? 'Motorista Inativado' : 'Avaliar Agora'}
+                                      </button>
                                   </div>
                               ))}
                           </div>
@@ -918,11 +997,16 @@ const EvaluationsTable: React.FC<EvaluationsTableProps> = ({ userRole, userName,
                                       </tr>
                                   </thead>
                                   <tbody className="text-xs divide-y divide-slate-100">
-                                      {pendingDrivers.map((row, idx) => (
-                                          <tr key={idx} className="hover:bg-slate-50 transition-colors group">
+                                      {displayedPendingDrivers.map((row, idx) => (
+                                          <tr key={idx} className={`hover:bg-slate-50 transition-colors group ${row.driver.isActive === false ? 'bg-slate-50/40 text-slate-500' : ''}`}>
                                               <td className="p-4 font-bold text-slate-700 sticky left-0 bg-white group-hover:bg-slate-50 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] border-r border-transparent">
                                                   <div className="flex flex-col">
-                                                      <span>{row.driver.name}</span>
+                                                      <div className="flex items-center gap-2">
+                                                          <span>{row.driver.name}</span>
+                                                          {row.driver.isActive === false && (
+                                                              <span className="text-[9px] bg-slate-200 text-slate-600 font-bold px-1.5 py-0.2 rounded">INATIVO</span>
+                                                          )}
+                                                      </div>
                                                       <span className="text-[9px] text-slate-400 uppercase">{row.driver.base}</span>
                                                   </div>
                                               </td>
@@ -934,7 +1018,7 @@ const EvaluationsTable: React.FC<EvaluationsTableProps> = ({ userRole, userName,
 
                                               <td className="p-2 text-center font-bold text-slate-400 border-l border-slate-100 bg-slate-50/50">{row.monthTarget}</td>
                                               <td className="p-2 text-center font-bold bg-slate-50/50">
-                                                  <span className={`${row.monthCount >= row.monthTarget ? 'text-[#00ad74]' : 'text-red-500'}`}>{row.monthCount}</span>
+                                                  <span className={`${row.monthTarget === 0 ? 'text-slate-400' : row.monthCount >= row.monthTarget ? 'text-[#00ad74]' : 'text-red-500'}`}>{row.monthCount}</span>
                                               </td>
 
                                               {row.weeksBreakdown.map((w, wIdx) => (
@@ -944,12 +1028,21 @@ const EvaluationsTable: React.FC<EvaluationsTableProps> = ({ userRole, userName,
                                                               <span className="font-black">{w.realized} <span className="opacity-40 text-[9px]">/ {w.target}</span></span>
                                                           </div>
                                                       ) : (
-                                                          <span className="text-slate-300">-</span>
+                                                          <span className="text-slate-300 font-mono">-</span>
                                                       )}
                                                   </td>
                                               ))}
                                               <td className="p-2 text-center border-l border-slate-200">
-                                                  <button onClick={() => { setIsPendingModalOpen(false); onEvaluateDriver && onEvaluateDriver(row.driver.id); }} className="p-1.5 bg-[#00ad74] text-white rounded-lg hover:bg-[#008f61] transition-colors" title="Avaliar">
+                                                  <button 
+                                                      disabled={row.driver.isActive === false}
+                                                      onClick={() => { 
+                                                          if (row.driver.isActive === false) return;
+                                                          setIsPendingModalOpen(false); 
+                                                          onEvaluateDriver && onEvaluateDriver(row.driver.id); 
+                                                      }} 
+                                                      className={`p-1.5 rounded-lg transition-colors ${row.driver.isActive === false ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-[#00ad74] text-white hover:bg-[#008f61]'}`} 
+                                                      title={row.driver.isActive === false ? "Motorista inativado" : "Avaliar"}
+                                                  >
                                                       <PlusCircle size={14} />
                                                   </button>
                                               </td>

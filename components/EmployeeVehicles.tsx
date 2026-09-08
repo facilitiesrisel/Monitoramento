@@ -354,8 +354,8 @@ export const EmployeeVehicles: React.FC<EmployeeVehiclesProps> = ({ userRole, us
         </div>
       )}
 
-      {/* ÁREA SUPERIOR FIXA / CONGELADA (STICKY TOP HEADER CONTAINER) */}
-      <div className="sticky top-0 z-30 bg-slate-50/95 backdrop-blur-md pt-2 pb-3 space-y-4 shadow-xs">
+      {/* ÁREA SUPERIOR (CABEÇALHO, KPIS E FILTROS) */}
+      <div className="relative space-y-4 pt-1 pb-2">
         {/* CABEÇALHO DA PÁGINA */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 md:p-5 rounded-2xl border border-slate-200 shadow-sm print:hidden">
           <div className="flex items-center gap-3.5">
@@ -629,10 +629,158 @@ export const EmployeeVehicles: React.FC<EmployeeVehiclesProps> = ({ userRole, us
             </button>
           </div>
         ) : (
-          <div className="overflow-x-auto max-h-[calc(100vh-340px)] min-h-[400px]">
-            <table className="w-full text-left border-collapse text-sm font-aptos-narrow">
-              {/* CABEÇALHO VERDE GRADIENTE CONGELADO (STICKY HEADER) */}
-              <thead className="sticky top-0 z-20 shadow-md">
+          <div className="w-full">
+            {/* ========================================================================= */}
+            {/* VISUALIZAÇÃO EM CARTÕES PARA DISPOSITIVOS MÓVEIS (CELULAR - md:hidden)   */}
+            {/* ========================================================================= */}
+            <div className="md:hidden divide-y divide-slate-100 p-3 space-y-3">
+              {filteredVehicles.map((vehicle, idx) => {
+                const isCar = vehicle.type === 'CARRO';
+                const phones = parsePhoneNumbers(vehicle.phone);
+                const whatsAppLink = getWhatsAppLink(vehicle);
+                const formattedName = toTitleCase(vehicle.employeeName);
+                const formattedBrand = toTitleCase(vehicle.brand);
+                const formattedModel = toTitleCase(vehicle.model);
+                const formattedDept = toTitleCase(vehicle.department);
+                const isDuplicated = duplicatePlates.has((vehicle.plate || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase());
+
+                return (
+                  <div 
+                    key={`mob-veh-${vehicle.id || idx}`}
+                    className={`p-4 rounded-2xl border transition-all ${
+                      isDuplicated 
+                        ? 'bg-rose-50/40 border-rose-200' 
+                        : 'bg-white border-slate-200 shadow-xs'
+                    }`}
+                  >
+                    {/* Topo do Card: Placa Mercosul + Badge Tipo + Alerta se Duplicado */}
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <div className="flex items-center gap-2">
+                        <MercosulPlateBadge plate={vehicle.plate} />
+                        {isDuplicated && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-100 text-rose-800 rounded-md text-[10px] font-black border border-rose-300 animate-pulse">
+                            ⚠️ Repetida
+                          </span>
+                        )}
+                      </div>
+
+                      <div>
+                        {isCar ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <Car size={13} className="text-[#00ad74]" />
+                            <span>Carro</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-black bg-amber-50 text-amber-700 border border-amber-200">
+                            <Bike size={13} className="text-amber-600" />
+                            <span>Moto</span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Dados do Colaborador */}
+                    <div className="flex items-start gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-700 font-bold flex items-center justify-center text-sm border border-slate-200 shrink-0">
+                        {formattedName.substring(0, 2).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h4 className="text-base font-bold text-slate-900 leading-tight">
+                          {formattedName}
+                        </h4>
+                        <div className="flex items-center gap-2 text-xs text-slate-500 font-medium mt-1 flex-wrap">
+                          <span className="font-semibold text-slate-700">
+                            {formattedModel || 'Modelo não informado'}
+                          </span>
+                          {formattedBrand && (
+                            <span className="text-slate-400">({formattedBrand})</span>
+                          )}
+                          <div className="inline-block">
+                            <ColorPill colorName={vehicle.color} />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Detalhes: Setor, Horários e Ramal */}
+                    <div className="grid grid-cols-2 gap-2 text-xs pt-2.5 pb-3 border-t border-slate-100">
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase block">Setor</span>
+                        <span className="inline-flex items-center gap-1 font-bold text-slate-700 mt-0.5 truncate max-w-full">
+                          <Building2 size={12} className="text-[#00ad74] shrink-0" />
+                          <span className="truncate">{formattedDept || 'Não inf.'}</span>
+                        </span>
+                      </div>
+
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase block">Horários Habitual</span>
+                        <div className="inline-flex items-center gap-1 font-semibold text-slate-700 mt-0.5">
+                          <Clock size={11} className="text-slate-400 shrink-0" />
+                          <span>{vehicle.entryTime ? vehicle.entryTime.substring(0, 5) : '--:--'}</span>
+                          <span className="text-slate-400">às</span>
+                          <span>{vehicle.exitTime ? vehicle.exitTime.substring(0, 5) : '--:--'}</span>
+                        </div>
+                      </div>
+
+                      {vehicle.extension && (
+                        <div className="col-span-2 text-[11px] text-slate-500 font-medium flex items-center gap-1">
+                          <Hash size={11} className="text-slate-400" />
+                          <span>Ramal Interno: <strong>{vehicle.extension}</strong></span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Botões de Ação no Mobile */}
+                    <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-slate-100">
+                      {phones.length > 0 && phones[0].isValid ? (
+                        <a
+                          href={whatsAppLink || '#'}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 bg-[#25D366] hover:bg-[#1EBE5D] text-white px-3 py-1.5 rounded-xl font-bold text-xs shadow-xs active:scale-95"
+                          title={`Conversar no WhatsApp (${phones[0].raw})`}
+                        >
+                          <MessageCircle size={14} className="fill-white" />
+                          <span>WhatsApp</span>
+                        </a>
+                      ) : (
+                        <span className="text-[11px] text-slate-400 italic">Sem WhatsApp</span>
+                      )}
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => setSelectedVehicleModal(vehicle)}
+                          className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1 transition-all active:scale-95"
+                          title="Ver ficha completa"
+                        >
+                          <Eye size={13} />
+                          <span>Ficha</span>
+                        </button>
+
+                        {canEdit && (
+                          <button
+                            onClick={() => setEditingVehicle(vehicle)}
+                            className="px-2.5 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-1 transition-all active:scale-95"
+                            title="Editar veículo"
+                          >
+                            <Edit3 size={13} />
+                            <span>Editar</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* ========================================================================= */}
+            {/* VISUALIZAÇÃO EM TABELA PARA TELAS MÉDIAS E DESKTOP (hidden md:block)      */}
+            {/* ========================================================================= */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left border-collapse text-sm font-aptos-narrow">
+                {/* CABEÇALHO VERDE GRADIENTE CONGELADO (STICKY HEADER) */}
+                <thead className="sticky top-0 z-20 shadow-md">
                 <tr className="bg-gradient-to-r from-emerald-800 via-[#00ad74] to-teal-800 text-white font-extrabold text-[11px] uppercase tracking-wider select-none">
                   <th 
                     onClick={() => handleSort('employeeName')} 
@@ -875,6 +1023,7 @@ export const EmployeeVehicles: React.FC<EmployeeVehiclesProps> = ({ userRole, us
               </tbody>
             </table>
           </div>
+        </div>
         )}
       </div>
 

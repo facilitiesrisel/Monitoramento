@@ -1200,6 +1200,25 @@ export const getEvaluationsByEvaluator = (name: string) => {
     return rawData.filter(e => normalizeEvaluatorName(e.evaluator) === norm).sort((a,b) => b.timestamp.localeCompare(a.timestamp));
 };
 
+export const parseInactivationDate = (dateStr?: string): Date | null => {
+    if (!dateStr || !dateStr.trim()) return null;
+    const clean = dateStr.trim();
+    if (clean.includes('/')) {
+        const parts = clean.split('/');
+        if (parts.length === 3) {
+            const day = parseInt(parts[0], 10);
+            const month = parseInt(parts[1], 10) - 1;
+            let year = parseInt(parts[2], 10);
+            if (year < 100) year += 2000;
+            const d = new Date(year, month, day, 12, 0, 0);
+            if (!isNaN(d.getTime())) return d;
+        }
+    }
+    const isoDate = new Date(clean.includes('T') ? clean : clean + 'T12:00:00');
+    if (!isNaN(isoDate.getTime())) return isoDate;
+    return null;
+};
+
 export const getDriverWeekTargetForPeriod = (drv: DriverProfile, y: number, m: number, w: number): number => {
     if (!drv.hasCamera) return 0;
     const totalWeeksInMonth = getWeeksInMonth(y, m);
@@ -1213,8 +1232,8 @@ export const getDriverWeekTargetForPeriod = (drv: DriverProfile, y: number, m: n
         return 0; // se inativo sem data, assume-se que está inativo sempre
     }
     
-    const inactDate = new Date(drv.inactivationDate + 'T12:00:00');
-    if (isNaN(inactDate.getTime())) {
+    const inactDate = parseInactivationDate(drv.inactivationDate);
+    if (!inactDate) {
         return 0;
     }
     
@@ -1226,7 +1245,21 @@ export const getDriverWeekTargetForPeriod = (drv: DriverProfile, y: number, m: n
     if (y < inactYear || (y === inactYear && m < inactMonth)) {
         return 1;
     } else if (y === inactYear && m === inactMonth) {
-        return w <= inactWeek ? 1 : 0;
+        // Se a semana solicitada foi antes da semana de inativação, a meta era 1
+        if (w < inactWeek) {
+            return 1;
+        }
+        // Da data da inativação para frente: se a semana é posterior à inativação, meta é 0
+        if (w > inactWeek) {
+            return 0;
+        }
+        // Na semana da inativação (w === inactWeek): não gera pendência da data da inativação para frente
+        const driverRealizedInWeek = getRawEvaluations({ year: y, month: m, driverName: drv.name }, true).filter(e => {
+            const d = new Date(e.timestamp);
+            const weekNum = Math.ceil(d.getDate() / 7);
+            return Math.min(weekNum, 5) === w;
+        }).length;
+        return driverRealizedInWeek > 0 ? 1 : 0;
     } else {
         return 0;
     }
@@ -1243,24 +1276,25 @@ export const getDriverTargetForPeriod = (drv: DriverProfile, y: number, m: numbe
         return 0; // se inativo sem data, assume-se que está inativo sempre
     }
     
-    const inactDate = new Date(drv.inactivationDate + 'T12:00:00');
-    if (isNaN(inactDate.getTime())) {
+    const inactDate = parseInactivationDate(drv.inactivationDate);
+    if (!inactDate) {
         return 0;
     }
     
     const inactYear = inactDate.getFullYear();
     const inactMonth = inactDate.getMonth();
-    const inactDay = inactDate.getDate();
-    const inactWeek = Math.ceil(inactDay / 7);
     
     if (y < inactYear || (y === inactYear && m < inactMonth)) {
+        // Período anterior à inativação: mantém meta e histórico
         return getWeeksInMonth(y, m);
     } else if (y === inactYear && m === inactMonth) {
-        // quantidade realizada no mês para que fique OK (meta = realizada)
+        // Mês da inativação: o histórico permanece (avaliações feitas contam),
+        // mas da data da inativação para frente não cobra pendências residuais.
+        // A meta é ajustada para as avaliações realizadas no mês.
         const driverRealized = getRawEvaluations({ year: y, month: m, driverName: drv.name }, true).length;
         return driverRealized;
     } else {
-        // próximo mês ou subsequente, target = 0
+        // Meses posteriores à inativação: nunca contabilizar para dados futuros
         return 0;
     }
 };
@@ -1378,8 +1412,8 @@ export const getDashboardMetrics = (y: number, m: number | null, f: DashboardFil
     const activeDriversCountInPeriod = driversWithCam.filter(drv => {
         if (drv.isActive !== false) return true;
         if (!drv.inactivationDate) return false;
-        const inactDate = new Date(drv.inactivationDate + 'T12:00:00');
-        if (isNaN(inactDate.getTime())) return false;
+        const inactDate = parseInactivationDate(drv.inactivationDate);
+        if (!inactDate) return false;
         if (m !== null) {
             return y < inactDate.getFullYear() || (y === inactDate.getFullYear() && m <= inactDate.getMonth());
         }

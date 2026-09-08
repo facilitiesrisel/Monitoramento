@@ -57,7 +57,11 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ evaluatorName, onCancel
 
   useEffect(() => {
     const allDrivers = getManagedDrivers();
-    const driversWithCamera = allDrivers.filter(d => d.hasCamera === true);
+    const driversWithCamera = allDrivers.filter(d => {
+        if (!d.hasCamera) return false;
+        if (editEvaluationId) return true;
+        return d.isActive !== false;
+    });
     setDrivers(driversWithCamera);
     setChecklistQuestions(getChecklistQuestions());
 

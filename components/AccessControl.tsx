@@ -336,8 +336,18 @@ const AccessControl: React.FC<AccessControlProps> = ({ operatorName }) => {
         });
     }, [groupedLogs]);
 
+    const expandAllDates = () => setExpandedDates([...sortedDates]);
+    const collapseAllDates = () => setExpandedDates([]);
+
+    // Expande automaticamente todas as datas para garantir que ao rolar a tela no celular as informações apareçam
+    useEffect(() => {
+        if (sortedDates.length > 0) {
+            setExpandedDates(prev => (prev.length === 0 ? sortedDates : prev));
+        }
+    }, [sortedDates]);
+
     return (
-        <div className="space-y-6 animate-in fade-in duration-500 w-full h-full flex flex-col">
+        <div className="space-y-6 animate-in fade-in duration-500 w-full flex flex-col pb-8">
             <div className="flex flex-col space-y-4 shrink-0">
                 <div className="flex flex-col md:flex-row items-center justify-between gap-4">
                     <div className="flex flex-col space-y-1">
@@ -418,155 +428,245 @@ const AccessControl: React.FC<AccessControlProps> = ({ operatorName }) => {
                 </div>
             </div>
 
-            <div className="flex-1 overflow-hidden flex flex-col relative">
+            <div className="w-full flex flex-col relative space-y-4">
                 {isRefreshing && logs.length === 0 && (
-                    <div className="absolute inset-0 z-20 bg-white/80 flex items-center justify-center flex-col animate-in fade-in duration-300">
+                    <div className="p-8 bg-white/80 rounded-2xl border border-slate-200 flex items-center justify-center flex-col animate-in fade-in duration-300">
                         <Loader2 className="animate-spin text-[#00ad74] mb-2" size={32} />
-                        <span className="text-sm font-bold text-slate-500 uppercase tracking-widest">Sincronizando...</span>
+                        <span className="text-sm font-bold text-slate-500 uppercase tracking-widest">Sincronizando registros...</span>
                     </div>
                 )}
                 
-                <div className="overflow-auto flex-1 pr-2 custom-scrollbar">
-                    <div className="space-y-4 pb-6">
-                        {sortedDates.length > 0 ? (
-                            sortedDates.map((date) => {
-                                const dateLogs = groupedLogs[date];
-                                const isExpanded = expandedDates.includes(date);
-                                
-                                return (
-                                    <div key={date} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all">
-                                        <button 
-                                            onClick={() => toggleDate(date)}
-                                            className="w-full p-4 flex items-center justify-between hover:bg-slate-50 transition-colors"
-                                        >
-                                            <div className="flex items-center gap-4">
-                                                <div className="bg-[#00ad74] text-white w-10 h-10 rounded-xl flex flex-col items-center justify-center shadow-lg shadow-emerald-500/20">
-                                                    <span className="text-[10px] font-black leading-none uppercase">
-                                                        {(() => {
-                                                            const [d, m, y] = date.split('/').map(Number);
-                                                            return new Date(y, m - 1, d).toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
-                                                        })()}
-                                                    </span>
-                                                    <span className="text-lg font-black leading-none">{date.split('/')[0]}</span>
-                                                </div>
-                                                <div className="text-left">
-                                                    <h4 className="font-bold text-slate-700">
-                                                        {(() => {
-                                                            const [d, m, y] = date.split('/').map(Number);
-                                                            return new Date(y, m - 1, d).toLocaleDateString('pt-BR', { weekday: 'long' });
-                                                        })()}
-                                                    </h4>
-                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{dateLogs.length} Acessos registrados</p>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-3">
-                                                <div className="flex -space-x-2">
-                                                    {Array.from(new Set(dateLogs.map(o => o.operator))).slice(0, 3).map((op, i) => (
-                                                        <div key={i} className="w-6 h-6 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[8px] font-black text-slate-500" title={op as string}>
-                                                            {(op as string).substring(0, 2).toUpperCase()}
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                                {isExpanded ? <ChevronUp size={20} className="text-slate-400" /> : <ChevronDown size={20} className="text-slate-400" />}
-                                            </div>
-                                        </button>
-
-                                        <AnimatePresence>
-                                            {isExpanded && (
-                                                <motion.div 
-                                                    initial={{ height: 0, opacity: 0 }}
-                                                    animate={{ height: 'auto', opacity: 1 }}
-                                                    exit={{ height: 0, opacity: 0 }}
-                                                    transition={{ duration: 0.3 }}
-                                                    className="overflow-hidden"
-                                                >
-                                                    <div className="p-4 pt-0 border-t border-slate-100">
-                                                        <div className="overflow-x-auto">
-                                                            <table className="w-full text-left border-collapse">
-                                                                <thead>
-                                                                    <tr className="text-slate-400 text-[9px] uppercase tracking-widest font-black border-b border-slate-100">
-                                                                        <th className="py-3 px-2">Hora</th>
-                                                                        <th className="py-3 px-2">Operador</th>
-                                                                        <th className="py-3 px-2">Visitante / Empresa</th>
-                                                                        <th className="py-3 px-2">Destino</th>
-                                                                        <th className="py-3 px-2">Placa</th>
-                                                                        <th className="py-3 px-2">Local</th>
-                                                                        <th className="py-3 px-2 text-right">Ações</th>
-                                                                    </tr>
-                                                                </thead>
-                                                                <tbody className="divide-y divide-slate-50">
-                                                                    {dateLogs.map((log, index) => (
-                                                                        <tr key={`${log.id}-${index}`} className="hover:bg-slate-50/50 transition-colors group">
-                                                                            <td className="py-3 px-2 font-mono text-slate-500 text-[10px] font-bold">
-                                                                                {log.dateTime.split(' ')[1]}
-                                                                            </td>
-                                                                            <td className="py-3 px-2">
-                                                                                <div className="flex items-center gap-2">
-                                                                                    <div className="w-6 h-6 rounded-lg bg-emerald-50 flex items-center justify-center text-[8px] font-black text-[#00ad74]">
-                                                                                        {log.operator.substring(0,2).toUpperCase()}
-                                                                                    </div>
-                                                                                    <span className="font-bold text-slate-600 text-[10px] uppercase">{log.operator}</span>
-                                                                                </div>
-                                                                            </td>
-                                                                            <td className="py-3 px-2">
-                                                                                <div className="font-bold text-slate-800 text-[10px] uppercase truncate max-w-[150px]">{log.visitorName}</div>
-                                                                                {log.visitorCompany && (
-                                                                                    <div className="text-[9px] text-slate-400 flex items-center gap-1 font-bold uppercase">
-                                                                                        <Building size={8} /> {log.visitorCompany}
-                                                                                    </div>
-                                                                                )}
-                                                                            </td>
-                                                                            <td className="py-3 px-2 text-slate-600 font-bold text-[10px] uppercase truncate max-w-[120px]">
-                                                                                {log.personVisited}
-                                                                            </td>
-                                                                            <td className="py-3 px-2">
-                                                                                <span className={`font-mono px-1.5 py-0.5 rounded border font-black text-[10px] uppercase ${log.vehiclePlate === 'ENTROU A PE' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-slate-100 text-slate-700 border-slate-200'}`}>
-                                                                                    {log.vehiclePlate}
-                                                                                </span>
-                                                                            </td>
-                                                                            <td className="py-3 px-2">
-                                                                                <span className={`inline-flex items-center gap-1 font-black text-[8px] px-1.5 py-1 rounded-md border uppercase ${log.location === 'CANCELA' ? 'bg-orange-50 text-orange-600 border-orange-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
-                                                                                    {log.location === 'CANCELA' ? <Car size={8}/> : <Phone size={8}/>}
-                                                                                    {log.location}
-                                                                                </span>
-                                                                            </td>
-                                                                            <td className="py-3 px-2 text-right">
-                                                                                <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
-                                                                                    <button 
-                                                                                        onClick={() => handleEdit(log)}
-                                                                                        className="p-1.5 bg-white border border-slate-200 text-slate-400 hover:text-[#00ad74] hover:border-[#00ad74] rounded-md transition-colors"
-                                                                                    >
-                                                                                        <Pencil size={12} />
-                                                                                    </button>
-                                                                                    <button 
-                                                                                        onClick={() => handleDelete(log.id)}
-                                                                                        className="p-1.5 bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-500 rounded-md transition-colors"
-                                                                                    >
-                                                                                        <Trash2 size={12} />
-                                                                                    </button>
-                                                                                </div>
-                                                                            </td>
-                                                                        </tr>
-                                                                    ))}
-                                                                </tbody>
-                                                            </table>
-                                                        </div>
-                                                    </div>
-                                                </motion.div>
-                                            )}
-                                        </AnimatePresence>
-                                    </div>
-                                );
-                            })
-                        ) : (
-                            <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-16 text-center space-y-3">
-                                <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto text-slate-300">
-                                    <Warehouse size={24} />
-                                </div>
-                                <p className="text-slate-400 text-sm font-medium uppercase tracking-widest">Nenhum registro encontrado.</p>
-                            </div>
-                        )}
+                {sortedDates.length > 0 && (
+                    <div className="flex items-center justify-between gap-2 px-1 py-1 flex-wrap">
+                        <div className="text-xs font-bold text-slate-500">
+                            Histórico de Acessos ({filteredLogs.length} registros em {sortedDates.length} dias)
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={expandAllDates}
+                                className="text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-lg transition-all active:scale-95"
+                            >
+                                Expandir Todas
+                            </button>
+                            <button
+                                type="button"
+                                onClick={collapseAllDates}
+                                className="text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-2.5 py-1 rounded-lg transition-all active:scale-95"
+                            >
+                                Recolher Todas
+                            </button>
+                        </div>
                     </div>
+                )}
+                
+                <div className="space-y-4">
+                    {sortedDates.length > 0 ? (
+                        sortedDates.map((date) => {
+                            const dateLogs = groupedLogs[date];
+                            const isExpanded = expandedDates.includes(date);
+                            
+                            return (
+                                <div key={date} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all">
+                                    <button 
+                                        onClick={() => toggleDate(date)}
+                                        className="w-full p-4 flex items-center justify-between hover:bg-slate-50 transition-colors"
+                                    >
+                                        <div className="flex items-center gap-4">
+                                            <div className="bg-[#00ad74] text-white w-10 h-10 rounded-xl flex flex-col items-center justify-center shadow-lg shadow-emerald-500/20">
+                                                <span className="text-[10px] font-black leading-none uppercase">
+                                                    {(() => {
+                                                        const [d, m, y] = date.split('/').map(Number);
+                                                        return new Date(y, m - 1, d).toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
+                                                    })()}
+                                                </span>
+                                                <span className="text-lg font-black leading-none">{date.split('/')[0]}</span>
+                                            </div>
+                                            <div className="text-left">
+                                                <h4 className="font-bold text-slate-700">
+                                                    {(() => {
+                                                        const [d, m, y] = date.split('/').map(Number);
+                                                        return new Date(y, m - 1, d).toLocaleDateString('pt-BR', { weekday: 'long' });
+                                                    })()}
+                                                </h4>
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{dateLogs.length} Acessos registrados</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <div className="flex -space-x-2">
+                                                {Array.from(new Set(dateLogs.map(o => o.operator))).slice(0, 3).map((op, i) => (
+                                                    <div key={i} className="w-6 h-6 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[8px] font-black text-slate-500" title={op as string}>
+                                                        {(op as string).substring(0, 2).toUpperCase()}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            {isExpanded ? <ChevronUp size={20} className="text-slate-400" /> : <ChevronDown size={20} className="text-slate-400" />}
+                                        </div>
+                                    </button>
+
+                                    <AnimatePresence>
+                                        {isExpanded && (
+                                            <motion.div 
+                                                initial={{ height: 0, opacity: 0 }}
+                                                animate={{ height: 'auto', opacity: 1 }}
+                                                exit={{ height: 0, opacity: 0 }}
+                                                transition={{ duration: 0.3 }}
+                                                className="overflow-hidden"
+                                            >
+                                                <div className="p-4 pt-0 border-t border-slate-100">
+                                                    {/* Visualização em Cartões Touch-Friendly para Celular (Mobile) */}
+                                                    <div className="md:hidden space-y-3 pt-2">
+                                                        {dateLogs.map((log, index) => (
+                                                            <div key={`mob-${log.id}-${index}`} className="p-3.5 bg-slate-50/90 rounded-xl border border-slate-200 flex flex-col gap-2.5 shadow-xs">
+                                                                <div className="flex items-center justify-between gap-2">
+                                                                    <span className="font-mono text-xs font-bold text-slate-700 bg-white px-2 py-0.5 rounded-md border border-slate-200">
+                                                                        ⏰ {log.dateTime.split(' ')[1] || log.dateTime}
+                                                                    </span>
+                                                                    <span className={`inline-flex items-center gap-1 font-black text-[9px] px-2 py-0.5 rounded-md border uppercase ${log.location === 'CANCELA' ? 'bg-orange-50 text-orange-600 border-orange-200' : 'bg-emerald-50 text-emerald-600 border-emerald-200'}`}>
+                                                                        {log.location === 'CANCELA' ? <Car size={10}/> : <Phone size={10}/>}
+                                                                        {log.location}
+                                                                    </span>
+                                                                </div>
+
+                                                                <div className="flex items-start justify-between gap-2">
+                                                                    <div className="min-w-0 flex-1">
+                                                                        <div className="font-extrabold text-slate-800 text-sm uppercase truncate">{log.visitorName}</div>
+                                                                        {log.visitorCompany && (
+                                                                            <div className="text-[11px] text-slate-500 flex items-center gap-1 font-bold uppercase mt-0.5 truncate">
+                                                                                <Building size={11} className="shrink-0" /> {log.visitorCompany}
+                                                                            </div>
+                                                                        )}
+                                                                        <div className="text-[11px] text-slate-500 mt-1">
+                                                                            Destino: <strong className="text-slate-700 uppercase">{log.personVisited}</strong>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="text-right shrink-0">
+                                                                        <span className={`font-mono px-2 py-1 rounded-lg border font-black text-xs uppercase block ${log.vehiclePlate === 'ENTROU A PE' ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-white text-slate-800 border-slate-300 shadow-xs'}`}>
+                                                                            {log.vehiclePlate}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 text-xs">
+                                                                    <div className="flex items-center gap-1.5 text-slate-500 text-[10px] font-bold">
+                                                                        <div className="w-5 h-5 rounded-md bg-emerald-100 flex items-center justify-center text-[8px] font-black text-[#00ad74] shrink-0">
+                                                                            {log.operator.substring(0, 2).toUpperCase()}
+                                                                        </div>
+                                                                        <span className="truncate max-w-[110px]">Op: {log.operator}</span>
+                                                                    </div>
+
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <button
+                                                                            onClick={() => handleEdit(log)}
+                                                                            className="px-2.5 py-1 bg-white border border-slate-200 text-slate-700 hover:text-[#00ad74] hover:border-[#00ad74] rounded-lg text-xs font-bold flex items-center gap-1 shadow-xs active:scale-95"
+                                                                            title="Editar registro"
+                                                                        >
+                                                                            <Pencil size={12} />
+                                                                            <span>Editar</span>
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => handleDelete(log.id)}
+                                                                            className="px-2.5 py-1 bg-white border border-slate-200 text-rose-500 hover:bg-rose-50 hover:border-rose-300 rounded-lg text-xs font-bold flex items-center gap-1 shadow-xs active:scale-95"
+                                                                            title="Excluir registro"
+                                                                        >
+                                                                            <Trash2 size={12} />
+                                                                            <span>Excluir</span>
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+
+                                                    {/* Visualização em Tabela para Telas Médias e Desktop */}
+                                                    <div className="hidden md:block overflow-x-auto">
+                                                        <table className="w-full text-left border-collapse">
+                                                            <thead>
+                                                                <tr className="text-slate-400 text-[9px] uppercase tracking-widest font-black border-b border-slate-100">
+                                                                    <th className="py-3 px-2">Hora</th>
+                                                                    <th className="py-3 px-2">Operador</th>
+                                                                    <th className="py-3 px-2">Visitante / Empresa</th>
+                                                                    <th className="py-3 px-2">Destino</th>
+                                                                    <th className="py-3 px-2">Placa</th>
+                                                                    <th className="py-3 px-2">Local</th>
+                                                                    <th className="py-3 px-2 text-right">Ações</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-slate-50">
+                                                                {dateLogs.map((log, index) => (
+                                                                    <tr key={`${log.id}-${index}`} className="hover:bg-slate-50/50 transition-colors group">
+                                                                        <td className="py-3 px-2 font-mono text-slate-500 text-[10px] font-bold">
+                                                                            {log.dateTime.split(' ')[1]}
+                                                                        </td>
+                                                                        <td className="py-3 px-2">
+                                                                            <div className="flex items-center gap-2">
+                                                                                <div className="w-6 h-6 rounded-lg bg-emerald-50 flex items-center justify-center text-[8px] font-black text-[#00ad74]">
+                                                                                    {log.operator.substring(0,2).toUpperCase()}
+                                                                                </div>
+                                                                                <span className="font-bold text-slate-600 text-[10px] uppercase">{log.operator}</span>
+                                                                            </div>
+                                                                        </td>
+                                                                        <td className="py-3 px-2">
+                                                                            <div className="font-bold text-slate-800 text-[10px] uppercase truncate max-w-[150px]">{log.visitorName}</div>
+                                                                            {log.visitorCompany && (
+                                                                                <div className="text-[9px] text-slate-400 flex items-center gap-1 font-bold uppercase">
+                                                                                    <Building size={8} /> {log.visitorCompany}
+                                                                                </div>
+                                                                            )}
+                                                                        </td>
+                                                                        <td className="py-3 px-2 text-slate-600 font-bold text-[10px] uppercase truncate max-w-[120px]">
+                                                                            {log.personVisited}
+                                                                        </td>
+                                                                        <td className="py-3 px-2">
+                                                                            <span className={`font-mono px-1.5 py-0.5 rounded border font-black text-[10px] uppercase ${log.vehiclePlate === 'ENTROU A PE' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                                                                                {log.vehiclePlate}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td className="py-3 px-2">
+                                                                            <span className={`inline-flex items-center gap-1 font-black text-[8px] px-1.5 py-1 rounded-md border uppercase ${log.location === 'CANCELA' ? 'bg-orange-50 text-orange-600 border-orange-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
+                                                                                {log.location === 'CANCELA' ? <Car size={8}/> : <Phone size={8}/>}
+                                                                                {log.location}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td className="py-3 px-2 text-right">
+                                                                            <div className="flex justify-end gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all duration-200">
+                                                                                <button 
+                                                                                    onClick={() => handleEdit(log)}
+                                                                                    className="p-1.5 bg-white border border-slate-200 text-slate-400 hover:text-[#00ad74] hover:border-[#00ad74] rounded-md transition-colors"
+                                                                                    title="Editar"
+                                                                                >
+                                                                                    <Pencil size={12} />
+                                                                                </button>
+                                                                                <button 
+                                                                                    onClick={() => handleDelete(log.id)}
+                                                                                    className="p-1.5 bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-500 rounded-md transition-colors"
+                                                                                    title="Excluir"
+                                                                                >
+                                                                                    <Trash2 size={12} />
+                                                                                </button>
+                                                                            </div>
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+                                </div>
+                            );
+                        })
+                    ) : (
+                        <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-16 text-center space-y-3">
+                            <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto text-slate-300">
+                                <Warehouse size={24} />
+                            </div>
+                            <p className="text-slate-400 text-sm font-medium uppercase tracking-widest">Nenhum registro encontrado.</p>
+                        </div>
+                    )}
                 </div>
             </div>
 
