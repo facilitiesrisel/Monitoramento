@@ -1,6 +1,7 @@
 
 import { Evaluation, DriverStats, VehicleStats, DashboardMetrics, DriverProfile, DashboardFilters, EvaluatorStats, OperatorProfile, PriorityDriverStatus, AccessLog, UserRole, InternalTicket, DriverJustification, ShiftOccurrence, BolaPreta, EmployeeVehicle } from '../types';
 import * as XLSX from 'xlsx';
+import { sharepointBaselineRows } from './sharepointBaseline';
 
 // --- CONSTANTES E CONFIGURAÇÕES PADRÃO ---
 export const DEFAULT_SHEET_ID = "1SGVD01AwpwVTbkQRVF1vfLbKzRmgJs-GBPKQd1pOfLU";
@@ -687,75 +688,99 @@ export const loadEmployeeVehicles = async (cacheBust = true): Promise<EmployeeVe
     console.error("Erro ao carregar veículos do Google Sheets:", e);
   }
 
-  // 2. Carregar do SharePoint / OneDrive Excel (.xlsx) via API Backend ou Cache Local
+  // Função auxiliar para mapear linhas da planilha Excel do SharePoint
+  const parseSharepointRows = (excelRows: any[][]): EmployeeVehicle[] => {
+    if (!excelRows || excelRows.length <= 1) return [];
+    return excelRows.slice(1).map((r: any[], index: number) => {
+      const getCol = (idx: number) => (r[idx] !== undefined && r[idx] !== null ? String(r[idx]).trim() : '');
+
+      const employeeName = getCol(5);
+      const phone = getCol(6);
+      const extension = getCol(7);
+      const department = getCol(8);
+      const entryTime = getCol(9);
+      const exitTime = getCol(10);
+      const rawType = getCol(11);
+      const plate = getCol(12);
+      const brand = getCol(13);
+      const model = getCol(14);
+      const color = getCol(15);
+      const timestamp = getCol(0);
+
+      let type = 'CARRO';
+      if (rawType.toUpperCase().includes('MOTO')) {
+        type = 'MOTO';
+      } else {
+        type = 'CARRO';
+      }
+
+      return {
+        id: `emp-veh-sp-${index}-${(plate || 'NOPLATE').replace(/[^a-zA-Z0-9]/g, '') || Math.random().toString(36).substring(2, 7)}`,
+        rowIndex: index + 2,
+        timestamp,
+        employeeName: employeeName || 'Colaborador (Excel)',
+        phone,
+        extension,
+        department: department || 'Geral',
+        entryTime,
+        exitTime,
+        plate: plate.toUpperCase(),
+        brand: brand.toUpperCase(),
+        model: model || 'Veículo',
+        color: color || 'Não inf.',
+        type,
+        source: 'sharepoint' as const
+      };
+    }).filter(item => item.employeeName || item.plate);
+  };
+
+  // 2. Carregar do SharePoint / OneDrive Excel (.xlsx) via API Backend, Netlify Function ou Fallback Local
   try {
     let spVehicles: EmployeeVehicle[] = [];
-    const spRes = await fetch(`/api/sharepoint-vehicles${cacheBust ? '?_t=' + Date.now() : ''}`);
-    if (spRes.ok) {
-      const contentType = spRes.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        const data = await spRes.json();
-        const excelRows: any[][] = data.rows || [];
-        if (excelRows && excelRows.length > 1) {
-          spVehicles = excelRows.slice(1).map((r: any[], index: number) => {
-            const getCol = (idx: number) => (r[idx] !== undefined && r[idx] !== null ? String(r[idx]).trim() : '');
+    
+    // Tenta endpoints: primeiro /api/sharepoint-vehicles (Express ou Netlify redirect) e depois /.netlify/functions/sharepoint-vehicles
+    const endpoints = [
+      `/api/sharepoint-vehicles${cacheBust ? '?_t=' + Date.now() : ''}`,
+      `/.netlify/functions/sharepoint-vehicles${cacheBust ? '?_t=' + Date.now() : ''}`
+    ];
 
-            const employeeName = getCol(5);
-            const phone = getCol(6);
-            const extension = getCol(7);
-            const department = getCol(8);
-            const entryTime = getCol(9);
-            const exitTime = getCol(10);
-            const rawType = getCol(11);
-            const plate = getCol(12);
-            const brand = getCol(13);
-            const model = getCol(14);
-            const color = getCol(15);
-            const timestamp = getCol(0);
-
-            let type = 'CARRO';
-            if (rawType.toUpperCase().includes('MOTO')) {
-              type = 'MOTO';
-            } else {
-              type = 'CARRO';
+    for (const url of endpoints) {
+      try {
+        const spRes = await fetch(url);
+        if (spRes.ok) {
+          const contentType = spRes.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const data = await spRes.json();
+            const excelRows: any[][] = data.rows || [];
+            if (excelRows && excelRows.length > 1) {
+              spVehicles = parseSharepointRows(excelRows);
+              if (spVehicles.length > 0) {
+                try {
+                  localStorage.setItem('risel_cached_sharepoint_vehicles', JSON.stringify(spVehicles));
+                } catch (err) {}
+                break; // Conseguiu com sucesso os dados ao vivo
+              }
             }
-
-            return {
-              id: `emp-veh-sp-${index}-${(plate || 'NOPLATE').replace(/[^a-zA-Z0-9]/g, '') || Math.random().toString(36).substring(2, 7)}`,
-              rowIndex: index + 2,
-              timestamp,
-              employeeName: employeeName || 'Colaborador (Excel)',
-              phone,
-              extension,
-              department: department || 'Geral',
-              entryTime,
-              exitTime,
-              plate: plate.toUpperCase(),
-              brand: brand.toUpperCase(),
-              model: model || 'Veículo',
-              color: color || 'Não inf.',
-              type,
-              source: 'sharepoint'
-            };
-          }).filter(item => item.employeeName || item.plate);
-
-          if (spVehicles.length > 0) {
-            try {
-              localStorage.setItem('risel_cached_sharepoint_vehicles', JSON.stringify(spVehicles));
-            } catch (err) {}
           }
         }
+      } catch (err) {
+        // Tenta o próximo endpoint
       }
     }
 
+    // Se a chamada de rede não retornou os dados (por exemplo, primeiro carregamento no Netlify sem conexão ativa com o backend)
     if (spVehicles.length === 0) {
-      // Tenta carregar do cache local caso o SharePoint exija login ou esteja indisponível
       try {
         const cached = localStorage.getItem('risel_cached_sharepoint_vehicles');
         if (cached) {
           spVehicles = JSON.parse(cached);
         }
       } catch (err) {}
+    }
+
+    // Se ainda assim estiver vazio, usa os dados baseline extraídos diretamente da planilha do SharePoint
+    if (spVehicles.length === 0 && sharepointBaselineRows && sharepointBaselineRows.length > 1) {
+      spVehicles = parseSharepointRows(sharepointBaselineRows);
     }
 
     if (spVehicles.length > 0) {
@@ -768,6 +793,8 @@ export const loadEmployeeVehicles = async (cacheBust = true): Promise<EmployeeVe
       if (cached) {
         const spVehicles = JSON.parse(cached);
         allVehicles.push(...spVehicles);
+      } else if (sharepointBaselineRows && sharepointBaselineRows.length > 1) {
+        allVehicles.push(...parseSharepointRows(sharepointBaselineRows));
       }
     } catch (err) {}
   }
@@ -1173,6 +1200,38 @@ export const getEvaluationsByEvaluator = (name: string) => {
     return rawData.filter(e => normalizeEvaluatorName(e.evaluator) === norm).sort((a,b) => b.timestamp.localeCompare(a.timestamp));
 };
 
+export const getDriverWeekTargetForPeriod = (drv: DriverProfile, y: number, m: number, w: number): number => {
+    if (!drv.hasCamera) return 0;
+    const totalWeeksInMonth = getWeeksInMonth(y, m);
+    if (w > totalWeeksInMonth) return 0;
+    
+    if (drv.isActive !== false) {
+        return 1;
+    }
+    
+    if (!drv.inactivationDate) {
+        return 0; // se inativo sem data, assume-se que está inativo sempre
+    }
+    
+    const inactDate = new Date(drv.inactivationDate + 'T12:00:00');
+    if (isNaN(inactDate.getTime())) {
+        return 0;
+    }
+    
+    const inactYear = inactDate.getFullYear();
+    const inactMonth = inactDate.getMonth();
+    const inactDay = inactDate.getDate();
+    const inactWeek = Math.ceil(inactDay / 7);
+    
+    if (y < inactYear || (y === inactYear && m < inactMonth)) {
+        return 1;
+    } else if (y === inactYear && m === inactMonth) {
+        return w <= inactWeek ? 1 : 0;
+    } else {
+        return 0;
+    }
+};
+
 export const getDriverTargetForPeriod = (drv: DriverProfile, y: number, m: number): number => {
     if (!drv.hasCamera) return 0;
     
@@ -1191,6 +1250,8 @@ export const getDriverTargetForPeriod = (drv: DriverProfile, y: number, m: numbe
     
     const inactYear = inactDate.getFullYear();
     const inactMonth = inactDate.getMonth();
+    const inactDay = inactDate.getDate();
+    const inactWeek = Math.ceil(inactDay / 7);
     
     if (y < inactYear || (y === inactYear && m < inactMonth)) {
         return getWeeksInMonth(y, m);
@@ -1447,25 +1508,28 @@ export const getPriorityDrivers = (mode: 'week' | 'month', showAll: boolean, yea
                 const date = new Date(e.timestamp);
                 return date.getFullYear() === targetYear && date.getMonth() === targetMonth;
             }).length;
-            target = getWeeksInMonth(targetYear, targetMonth);
+            target = getDriverTargetForPeriod(d, targetYear, targetMonth);
         } else {
             if (year && month !== undefined) {
-                 count = evals.filter(e => {
+                count = evals.filter(e => {
                     const date = new Date(e.timestamp);
                     return date.getFullYear() === targetYear && date.getMonth() === targetMonth;
                 }).length;
-                 target = 1;
+                target = getDriverWeekTargetForPeriod(d, targetYear, targetMonth, 1);
             } else {
                 const startOfWeek = new Date(now);
                 startOfWeek.setDate(now.getDate() - now.getDay());
                 startOfWeek.setHours(0,0,0,0);
                 count = evals.filter(e => new Date(e.timestamp) >= startOfWeek).length;
-                target = 1;
+                
+                const currentMonth = now.getMonth();
+                const currentWeekNum = Math.ceil(now.getDate() / 7);
+                target = getDriverWeekTargetForPeriod(d, now.getFullYear(), currentMonth, currentWeekNum);
             }
         }
         
         let missing = Math.max(0, target - count);
-        if (hasValidJustification) missing = 0;
+        if (hasValidJustification || target === 0) missing = 0;
 
         let urgency: 'critical' | 'warning' | 'done' = 'done';
         if (missing > 0) urgency = count === 0 ? 'critical' : 'warning';

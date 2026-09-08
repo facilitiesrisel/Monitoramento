@@ -375,9 +375,6 @@ export const EmployeeVehicles: React.FC<EmployeeVehiclesProps> = ({ userRole, us
                   {autoSync ? 'Auto-Sincronizado' : 'Manual'}
                 </span>
               </div>
-              <p className="text-xs md:text-sm text-slate-500 font-medium mt-0.5 font-aptos-narrow">
-                Identificação veicular Mercosul, controle e edição em tempo real com a Planilha Google
-              </p>
             </div>
           </div>
 
@@ -387,7 +384,7 @@ export const EmployeeVehicles: React.FC<EmployeeVehiclesProps> = ({ userRole, us
               onClick={handleRefresh}
               disabled={refreshing}
               className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-xl text-xs md:text-sm font-bold transition-all active:scale-95 disabled:opacity-50"
-              title="Atualizar dados diretamente da Planilha Google"
+              title="Atualizar dados diretamente das planilhas"
             >
               <RefreshCw size={15} className={refreshing ? 'animate-spin text-[#00ad74]' : ''} />
               <span>{refreshing ? 'Atualizando...' : 'Atualizar'}</span>

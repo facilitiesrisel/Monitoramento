@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { getRawEvaluations, getManagedDrivers, getPriorityDrivers, getDashboardMetrics, getEvaluatorStats, getDriverStats, normalizeEvaluatorName, getWeeksInMonth, getActiveOperatorCount, sendTestEmail, loadData, deleteEvaluation, downloadEvaluationsCSV, resendEvaluationEmail } from '../services/dataService';
+import { getRawEvaluations, getManagedDrivers, getPriorityDrivers, getDashboardMetrics, getEvaluatorStats, getDriverStats, normalizeEvaluatorName, getWeeksInMonth, getActiveOperatorCount, sendTestEmail, loadData, deleteEvaluation, downloadEvaluationsCSV, resendEvaluationEmail, getDriverTargetForPeriod, getDriverWeekTargetForPeriod } from '../services/dataService';
 import { DriverProfile, Evaluation, UserRole, PriorityDriverStatus } from '../types';
 import { EvaluationReportView } from './EvaluationReportView';
 import { 
@@ -173,7 +173,7 @@ const EvaluationsTable: React.FC<EvaluationsTableProps> = ({ userRole, userName,
           
           let yearTarget = 0;
           for (let m = targetYearFilter; m < 12; m++) {
-              yearTarget += getWeeksInMonth(driverViewYear, m);
+              yearTarget += getDriverTargetForPeriod(drv, driverViewYear, m);
           }
 
           const evalsYear = allEvals.filter(ev => {
@@ -182,7 +182,7 @@ const EvaluationsTable: React.FC<EvaluationsTableProps> = ({ userRole, userName,
           }).length;
 
           // Filtragem Mês Selecionado
-          const monthTarget = getWeeksInMonth(driverViewYear, driverViewMonth);
+          const monthTarget = getDriverTargetForPeriod(drv, driverViewYear, driverViewMonth);
           const evalsMonth = allEvals.filter(ev => {
               const d = new Date(ev.timestamp);
               return ev.driver === drv.name && d.getFullYear() === driverViewYear && d.getMonth() === driverViewMonth;
@@ -213,6 +213,18 @@ const EvaluationsTable: React.FC<EvaluationsTableProps> = ({ userRole, userName,
       const calculatedData: ExtendedPriorityData[] = driversWithCam.map(driver => {
           const driverEvals = allEvals.filter(ev => ev.driver.trim().toUpperCase() === driver.name.trim().toUpperCase());
           
+          // Target para o mês filtrado considerando inativação
+          const adjustedMonthTarget = getDriverTargetForPeriod(driver, currentYear, pendingFilterMonth);
+          
+          // Target para a semana selecionada (ou atual se não selecionada)
+          let adjustedWeekTarget = 0;
+          if (pendingFilterWeek !== '') {
+              adjustedWeekTarget = getDriverWeekTargetForPeriod(driver, currentYear, pendingFilterMonth, Number(pendingFilterWeek));
+          } else {
+              const currentWeekNum = Math.ceil(now.getDate() / 7);
+              adjustedWeekTarget = getDriverWeekTargetForPeriod(driver, currentYear, pendingFilterMonth, currentWeekNum);
+          }
+
           // Count specific selected week if filter is active
           const weekCount = driverEvals.filter(ev => {
               const d = new Date(ev.timestamp);
@@ -237,16 +249,13 @@ const EvaluationsTable: React.FC<EvaluationsTableProps> = ({ userRole, userName,
           let yearTarget = 0;
           for(let m=0; m<12; m++) {
               if (currentYear === 2025 && m < 9) continue;
-              yearTarget += getWeeksInMonth(currentYear, m);
+              yearTarget += getDriverTargetForPeriod(driver, currentYear, m);
           }
-          
-          const adjustedMonthTarget = weeksInSelectedMonth;
-          const adjustedWeekTarget = 1;
 
           // Breakdown per week 1-5 for the Table View
           const weeksBreakdown = [];
           for (let w=1; w<=5; w++) {
-              const targetForW = (w <= weeksInSelectedMonth) ? 1 : 0;
+              const targetForW = getDriverWeekTargetForPeriod(driver, currentYear, pendingFilterMonth, w);
               const realizedForW = driverEvals.filter(e => {
                   const d = new Date(e.timestamp);
                   if (d.getFullYear() !== currentYear || d.getMonth() !== pendingFilterMonth) return false;
@@ -264,8 +273,8 @@ const EvaluationsTable: React.FC<EvaluationsTableProps> = ({ userRole, userName,
               monthTarget: adjustedMonthTarget,
               yearCount,
               yearTarget,
-              isMonthDone: monthCount >= adjustedMonthTarget && adjustedMonthTarget > 0,
-              isWeekDone: weekCount >= adjustedWeekTarget && adjustedWeekTarget > 0,
+              isMonthDone: adjustedMonthTarget === 0 || monthCount >= adjustedMonthTarget,
+              isWeekDone: adjustedWeekTarget === 0 || weekCount >= adjustedWeekTarget,
               weeksBreakdown
           };
       });
@@ -357,25 +366,23 @@ const EvaluationsTable: React.FC<EvaluationsTableProps> = ({ userRole, userName,
      try {
          const allDrivers = getManagedDrivers();
          const driversWithCam = allDrivers.filter(d => d.hasCamera === true);
-         const driversWithCameraCount = driversWithCam.length || 1;
-         
-         const activeOperatorsCount = getActiveOperatorCount();
+         const activeOperatorsCount = getActiveOperatorCount() || 1;
          const weeksInSelectedMonth = getWeeksInMonth(dashboardYear, dashboardMonth);
          
-         const fleetTargetMonth = driversWithCameraCount * weeksInSelectedMonth;
+         let fleetTargetMonth = 0;
+         driversWithCam.forEach(drv => {
+             fleetTargetMonth += getDriverTargetForPeriod(drv, dashboardYear, dashboardMonth);
+         });
          let targetMonth = Math.ceil(fleetTargetMonth / activeOperatorsCount);
          
-         let targetYear = 0;
-         if (dashboardYear === 2025) {
-             let totalWeeksYear = 0;
-             // CONTABILIZA APENAS DE OUTUBRO PARA FRENTE EM 2025
-             for(let m=9; m<12; m++) totalWeeksYear += getWeeksInMonth(dashboardYear, m);
-             targetYear = Math.ceil((driversWithCameraCount * totalWeeksYear) / activeOperatorsCount);
-         } else {
-             let totalWeeksYear = 0;
-             for(let m=0; m<12; m++) totalWeeksYear += getWeeksInMonth(dashboardYear, m);
-             targetYear = Math.ceil((driversWithCameraCount * totalWeeksYear) / activeOperatorsCount);
+         let fleetTargetYear = 0;
+         const startMonth = (dashboardYear === 2025) ? 9 : 0;
+         for(let m = startMonth; m < 12; m++) {
+             driversWithCam.forEach(drv => {
+                 fleetTargetYear += getDriverTargetForPeriod(drv, dashboardYear, m);
+             });
          }
+         let targetYear = Math.ceil(fleetTargetYear / activeOperatorsCount);
 
          const targetWeek = Math.ceil(targetMonth / weeksInSelectedMonth) || 0;
 
@@ -397,8 +404,11 @@ const EvaluationsTable: React.FC<EvaluationsTableProps> = ({ userRole, userName,
             .filter((_, idx) => dashboardYear !== 2025 || idx >= 9)
             .map((m) => {
                 const monthIdx = months.indexOf(months.find(name => name.startsWith(m.month)) || '');
-                const weeksInThatMonth = getWeeksInMonth(dashboardYear, monthIdx);
-                const indTargetThatMonth = Math.ceil((driversWithCameraCount * weeksInThatMonth) / activeOperatorsCount);
+                let fleetTargetThatMonth = 0;
+                driversWithCam.forEach(drv => {
+                    fleetTargetThatMonth += getDriverTargetForPeriod(drv, dashboardYear, monthIdx);
+                });
+                const indTargetThatMonth = Math.ceil(fleetTargetThatMonth / activeOperatorsCount);
                 return { ...m, goalTarget: indTargetThatMonth };
             });
 
@@ -700,7 +710,14 @@ const EvaluationsTable: React.FC<EvaluationsTableProps> = ({ userRole, userName,
                               {driverViewData.map((row, idx) => (
                                   <tr key={idx} className="hover:bg-slate-50 transition-colors">
                                       <td className="p-4 font-bold text-slate-700 border-r border-transparent">
-                                          {row.driver.name}
+                                          <div className="flex items-center gap-2">
+                                              <span>{row.driver.name}</span>
+                                              {row.driver.isActive === false && (
+                                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 font-semibold" title={`Inativo desde ${row.driver.inactivationDate ? new Date(row.driver.inactivationDate + 'T12:00:00').toLocaleDateString('pt-BR') : 'N/A'}`}>
+                                                      Inativo
+                                                  </span>
+                                              )}
+                                          </div>
                                       </td>
                                       <td className="p-4 text-slate-500 border-r border-slate-100">
                                           <span className="bg-slate-100 px-2 py-0.5 rounded border border-slate-200 font-bold text-[10px]">{row.driver.base}</span>
@@ -721,7 +738,7 @@ const EvaluationsTable: React.FC<EvaluationsTableProps> = ({ userRole, userName,
                                           {row.monthTarget}
                                       </td>
                                       <td className="p-4 text-center font-black bg-emerald-50/10">
-                                          <span className={`px-2 py-1 rounded ${row.monthRealized >= row.monthTarget ? 'bg-emerald-100 text-emerald-600' : 'bg-red-50 text-red-500'}`}>
+                                          <span className={`px-2 py-1 rounded ${row.monthTarget === 0 ? 'bg-slate-100 text-slate-600' : (row.monthRealized >= row.monthTarget ? 'bg-emerald-100 text-emerald-600' : 'bg-red-50 text-red-500')}`}>
                                               {row.monthRealized}
                                           </span>
                                       </td>

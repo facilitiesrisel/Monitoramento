@@ -1,6 +1,12 @@
 [build]
   command = "npm run build"
   publish = "dist"
+  functions = "netlify/functions"
+
+[[redirects]]
+  from = "/api/sharepoint-vehicles"
+  to = "/.netlify/functions/sharepoint-vehicles"
+  status = 200
 
 [[redirects]]
   from = "/*"
