@@ -21,7 +21,7 @@ export const DEFAULT_SHAREPOINT_EXCEL_URL = "https://riselcombustiveis-my.sharep
 
 // ATENÇÃO: Atualize esta URL se você criar uma NOVA implantação.
 // Se usar "Gerenciar Implantações > Nova Versão", a URL mantém-se a mesma.
-export const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxG0AkwhpYldpfvuoh6m_GXek461cdn-9qH9g39kyTtQwY3sB2JaTOME35quQXajzCBbA/exec";
+export const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby76r6sEAsPw3uUaJyZkQy7CKEgmL27TiB6xtWQnYxBJVTfL5bFU7lYYrPImxAQwruW9Q/exec";
 
 export const DEFAULT_DRIVE_FOLDER_ID = "1QjcgNaMbyQECI5u_g1UAPW5ZySJ9dkJv"; 
 
